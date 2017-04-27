@@ -118,10 +118,14 @@ class MailHelper:
                     cnt += 1
                 if fn.find('=?') == 0:
                     fn = MailHelper.iconv_header(fn)
-                # print "filename:", fn
+                # print "filename: mail_helper.py
                 attachments.append((fn, data))
 
         return body, attachments
+
+    def mark_as_read(self, email_uid):
+        """Mark an email as read."""
+        self.imapclient.uid("STORE", email_uid, "+FLAGS", "(\\Seen)")
 
     def send_email(self, from_addr, to_addr, msg):
         """Send a email."""

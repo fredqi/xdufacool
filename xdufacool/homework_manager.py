@@ -11,8 +11,8 @@
 ## ----------------------------------------------------------------------
 ### CHANGE LOG
 ## ----------------------------------------------------------------------
-## Last-Updated: 2016-11-08 01:45:34(+0800) [by Fred Qi]
-##     Update #: 1441
+## Last-Updated: 2017-01-08 12:18:58(+0800) [by Fred Qi]
+##     Update #: 1486
 ## ----------------------------------------------------------------------
 from __future__ import print_function
 
@@ -50,7 +50,7 @@ def parse_subject(subject):
     <school> = 02 means a student of School of Electronic Engineering
     """
     if not hasattr(parse_subject, 're_id'):
-        parse_subject.re_id = re.compile(r'(?P<stuid>[0-9]{11})')
+        parse_subject.re_id = re.compile(r'(?P<stuid>[0-9]{10,11})')
     student_id, name = None, None
     m = parse_subject.re_id.search(subject)
     if m is not None:
@@ -153,12 +153,15 @@ class Homework():
             # no mail has been processed
             update_info = True
 
+        email_uid_prev = email_uid
         if update_info:
+            email_uid_prev = self.latest_email_uid
             self.latest_email_uid = email_uid
             self.info = dict(name=student_name)
             for key, value in header.iteritems():
                 self.info[key] = value
             self.info['time'] = MailHelper.get_datetime(header['date'])
+        return email_uid_prev
 
     def save(self, body, attachments, overwrite=False):
         """Update homework and save attachments to disk."""
@@ -167,6 +170,7 @@ class Homework():
             self.data[sha256] = (fn, data)
 
         stu_path = os.path.join(Homework.class_id, self.student_id)
+        # print(stu_path)
         if not os.path.exists(stu_path):
             os.mkdir(stu_path)
 
@@ -281,18 +285,20 @@ def parse_cmd():
     if opts.test:
         print(mcond)
 
+    subjects = opts.subject.split()
+    Homework.initialize_static_variables(subjects[-1], classid,
+                                         "fred.qi@ieee.org", "Fei Qi")
+
     return (classid, mcond, opts.test)
 
 
-def check_homeworks():
+def check_homeworks(download=True):
     classid, mcond, test_mode = parse_cmd()
     if not os.path.exists(classid):
         os.mkdir(classid)
     logfn = os.path.join(classid, 'download.log')
     logfile = codecs.open(logfn, 'a', encoding='utf-8')
 
-    Homework.initialize_static_variables("HW1602", classid,
-                                         "fred.qi@ieee.org", "Fei Qi")
     if test_mode:
         mh = MailHelper('imap.gmail.com')
     else:
@@ -312,12 +318,15 @@ def check_homeworks():
         if student_id not in mgr.homeworks:
             mgr.homeworks[student_id] = Homework(euid, header)
         else:
-            mgr.homeworks[student_id].update(euid, header)
+            email_uid_prev = mgr.homeworks[student_id].update(euid, header)
+            # print(email_uid_prev, student_id)
+            if email_uid_prev is not None:
+                mh.mark_as_read(email_uid_prev)
 
     idx_reply = 0
     cnt_total = len(mgr.homeworks)
     for _, hw in mgr.homeworks.iteritems():
-        if not hw.is_confirmed():
+        if download or not hw.is_confirmed():
             idx_reply += 1
             mail_size = hw.info['size'] * 1.0 / 1024
             logtxt = u"  Downloading the mail [{index}/{total}][{size:5.1f}KB]..."
@@ -325,6 +334,8 @@ def check_homeworks():
             print(logtxt)
             logfile.writelines(logtxt + '\n')
             body, attachments = mh.fetch_email(hw.latest_email_uid)
+            # print(hw.latest_email_uid, hw.info,
+            #       hw.student_id, type(hw.student_id))
             hw.save(body, attachments)
             hw.display()
             if not test_mode:
@@ -332,10 +343,18 @@ def check_homeworks():
                 # print(to_addr)
                 # mh.send_email(Homework.email_teacher, to_addr, msg)
 
+    mh.quit()
+
     msg = "There are {replied}/{total} emails have been replied."
     print(msg.format(replied=idx_reply, total=cnt_total))
 
-    mh.quit()
+    stu_ids = sorted(mgr.homeworks.keys())
+
+    text = [stu + ', 1\n' for stu in stu_ids]
+    textfile = open(Homework.homework_id + ".csv", 'w')
+    textfile.writelines(text)
+    textfile.close()
+
 
 ## ----------------------------------------------------------------------
 ### END OF FILE 
