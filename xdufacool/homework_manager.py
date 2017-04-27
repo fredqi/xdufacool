@@ -11,8 +11,8 @@
 ## ----------------------------------------------------------------------
 ### CHANGE LOG
 ## ----------------------------------------------------------------------
-## Last-Updated: 2017-01-08 12:18:58(+0800) [by Fred Qi]
-##     Update #: 1486
+## Last-Updated: 2017-04-27 21:40:00(+0800) [by Fred Qi]
+##     Update #: 1541
 ## ----------------------------------------------------------------------
 from __future__ import print_function
 
@@ -25,7 +25,7 @@ from email.header import Header
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.utils import formataddr
-from optparse import OptionParser
+from argparse import ArgumentParser
 
 from xdufacool.mail_helper import MailHelper
 
@@ -50,7 +50,7 @@ def parse_subject(subject):
     <school> = 02 means a student of School of Electronic Engineering
     """
     if not hasattr(parse_subject, 're_id'):
-        parse_subject.re_id = re.compile(r'(?P<stuid>[0-9]{10,11})')
+        parse_subject.re_id = re.compile(r'(?P<stuid>[0-9]{10,11}|X{3,5})')
     student_id, name = None, None
     m = parse_subject.re_id.search(subject)
     if m is not None:
@@ -169,8 +169,8 @@ class Homework():
             sha256 = hashlib.sha256(data).hexdigest()
             self.data[sha256] = (fn, data)
 
+        # print(Homework.class_id, self.student_id)
         stu_path = os.path.join(Homework.class_id, self.student_id)
-        # print(stu_path)
         if not os.path.exists(stu_path):
             os.mkdir(stu_path)
 
@@ -237,66 +237,61 @@ class Homework():
 class HomeworkManager:
     """The class for processing homework submitted via mail."""
 
-    def __init__(self, classid='1402015',
+    def __init__(self, class_id='1402015',
                  name="Fred Qi",
                  email_addr="fred.qi@ieee.org"):
-        self.classid = classid  # Class ID
+        self.class_id = class_id  # Class ID
         self.homeworks = dict()
         self.mail_label = 'teaching'
 
         # Create a folder for the class
-        if not os.path.exists(self.classid):
-            os.mkdir(self.classid)
+        if not os.path.exists(self.class_id):
+            os.mkdir(self.class_id)
 
 
 def parse_cmd():
-    parser = OptionParser('Usage: %prog [options] classid')
-    parser.add_option('-s', '--search-subject', dest='subject',
-                      help='The keywords in mail subject used for search.')
-    parser.add_option('-a', '--search-since', dest='since',
-                      help='Search mails received since the given date.')
-    parser.add_option('-b', '--search-before', dest='before',
-                      help='Search mails received before the given date.')
-    parser.add_option('-t', '--test-mode', dest='test',
-                      action='store_true', default=False,
-                      help='Analyze the header for the purpose of testing.')
-
-    opts, args = parser.parse_args()
-
-    if len(args) != 1:
-        print('Wrong arguments')
-        exit(-1)
-
-    classid = args[0]
+    parser = ArgumentParser(description="Download homeworks submitted via gmail.")
+    parser.add_argument('-s', '--search-subject', dest='subject', required=True,
+                        help='The keywords in mail subject used for search.')
+    parser.add_argument('-a', '--search-since', dest='since',
+                        help='Search mails received since the given date.')
+    parser.add_argument('-b', '--search-before', dest='before',
+                        help='Search mails received before the given date.')
+    parser.add_argument('-t', '--test-mode', dest='test',
+                        action='store_true', default=False,
+                        help='Analyze the header for the purpose of testing.')
+    parser.add_argument('class_id', metavar='class_id', type=str,
+                        help="ID of the class.")
+    args = parser.parse_args()
 
     conds = []
-    if opts.subject:
-        conds.append('SUBJECT "%s"' % opts.subject)
-    if opts.since:
-        conds.append('SINCE "%s"' % opts.since)
-    if opts.before:
-        conds.append('BEFORE "%s"' % opts.before)
+    if args.subject is not None:
+        conds.append('SUBJECT "%s"' % args.subject)
+    if args.since is not None:
+        conds.append('SINCE "%s"' % args.since)
+    if args.before is not None:
+        conds.append('BEFORE "%s"' % args.before)
 
     if 0 == len(conds):
         mcond = '(ALL SUBJECT "[PRML]")'
     else:
         mcond = '(%s)' % (' '.join(conds))
 
-    if opts.test:
+    if args.test:
         print(mcond)
 
-    subjects = opts.subject.split()
-    Homework.initialize_static_variables(subjects[-1], classid,
+    subjects = args.subject.split()
+    Homework.initialize_static_variables(subjects[-1], args.class_id,
                                          "fred.qi@ieee.org", "Fei Qi")
 
-    return (classid, mcond, opts.test)
+    return (args.class_id, mcond, args.test)
 
 
 def check_homeworks(download=True):
-    classid, mcond, test_mode = parse_cmd()
-    if not os.path.exists(classid):
-        os.mkdir(classid)
-    logfn = os.path.join(classid, 'download.log')
+    class_id, mcond, test_mode = parse_cmd()
+    if not os.path.exists(class_id):
+        os.mkdir(class_id)
+    logfn = os.path.join(class_id, 'download.log')
     logfile = codecs.open(logfn, 'a', encoding='utf-8')
 
     if test_mode:
@@ -307,7 +302,8 @@ def check_homeworks(download=True):
     print('Please input the password of', Homework.email_teacher)
     mh.login(Homework.email_teacher, getpass.getpass())
 
-    mgr = HomeworkManager(classid)
+    mgr = HomeworkManager(class_id)
+    # print(mgr.mail_label, mcond)
     email_uids = mh.search(mgr.mail_label, mcond)
     for euid in email_uids:
         header = mh.fetch_header(euid)
@@ -341,7 +337,7 @@ def check_homeworks(download=True):
             if not test_mode:
                 to_addr, msg = hw.create_confirmation()
                 # print(to_addr)
-                # mh.send_email(Homework.email_teacher, to_addr, msg)
+                mh.send_email(Homework.email_teacher, to_addr, msg)
 
     mh.quit()
 
