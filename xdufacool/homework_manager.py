@@ -1,19 +1,17 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-## ----------------------------------------------------------------------
-## START OF FILE
-## ----------------------------------------------------------------------
-## 
-## Filename: homework_manager.py
-## Author: Fred Qi
-## Created: 2012-06-07 15:59:37(+0800)
-## 
-## ----------------------------------------------------------------------
-### CHANGE LOG
-## ----------------------------------------------------------------------
-## Last-Updated: 2017-04-27 21:40:00(+0800) [by Fred Qi]
-##     Update #: 1541
-## ----------------------------------------------------------------------
+# ----------------------------------------------------------------------
+# 
+# Filename: homework_manager.py
+# Author: Fred Qi
+# Created: 2012-06-07 15:59:37(+0800)
+# 
+# ----------------------------------------------------------------------
+# ## CHANGE LOG
+# ----------------------------------------------------------------------
+# Last-Updated: 2017-05-31 13:51:39(+0800) [by Fred Qi]
+#     Update #: 1563
+# ----------------------------------------------------------------------
 from __future__ import print_function
 
 import codecs
@@ -50,7 +48,7 @@ def parse_subject(subject):
     <school> = 02 means a student of School of Electronic Engineering
     """
     if not hasattr(parse_subject, 're_id'):
-        parse_subject.re_id = re.compile(r'(?P<stuid>[0-9]{10,11}|X{3,5})')
+        parse_subject.re_id = re.compile(r'(?P<stuid>[0-9]{9,11}|X{3,5})')
     student_id, name = None, None
     m = parse_subject.re_id.search(subject)
     if m is not None:
@@ -171,6 +169,7 @@ class Homework():
 
         # print(Homework.class_id, self.student_id)
         stu_path = os.path.join(Homework.class_id, self.student_id)
+        # print(stu_path)
         if not os.path.exists(stu_path):
             os.mkdir(stu_path)
 
@@ -221,11 +220,7 @@ class Homework():
 
     def is_confirmed(self):
         """Check whether the confirmation email has been sent."""
-        field = "message-id"
-        has_replied = False
-        if field in self.info:
-            has_replied = self.info[field] in self.replied
-        return has_replied
+        return self.info['message-id'] in self.replied
 
     def display(self):
         """Display the content of the homework to be processed."""
@@ -250,8 +245,10 @@ class HomeworkManager:
 
 
 def parse_cmd():
-    parser = ArgumentParser(description="Download homeworks submitted via gmail.")
-    parser.add_argument('-s', '--search-subject', dest='subject', required=True,
+    desc = "To check and download homeworks from an IMAP server."
+    parser = ArgumentParser(description=desc)
+    parser.add_argument('-s', '--search-subject', dest='subject',
+                        required=True,
                         help='The keywords in mail subject used for search.')
     parser.add_argument('-a', '--search-since', dest='since',
                         help='Search mails received since the given date.')
@@ -322,8 +319,9 @@ def check_homeworks(download=True):
     idx_reply = 0
     cnt_total = len(mgr.homeworks)
     for _, hw in mgr.homeworks.iteritems():
-        if download or not hw.is_confirmed():
+        if download and not hw.is_confirmed():
             idx_reply += 1
+            # hw.display()
             mail_size = hw.info['size'] * 1.0 / 1024
             logtxt = u"  Downloading the mail [{index}/{total}][{size:5.1f}KB]..."
             logtxt = logtxt.format(index=idx_reply, total=cnt_total, size=mail_size)
@@ -352,6 +350,6 @@ def check_homeworks(download=True):
     textfile.close()
 
 
-## ----------------------------------------------------------------------
-### END OF FILE 
-## ----------------------------------------------------------------------
+# ----------------------------------------------------------------------
+# END OF FILE
+# ----------------------------------------------------------------------
