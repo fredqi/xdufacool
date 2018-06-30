@@ -11,8 +11,8 @@ from xdufacool.homework_manager import parse_subject
 
 class TestFunctions(TestCase):
     def test_load_and_hash(self):
-        fn = "/home/fred/lectures/xdufacool/1402015/14020150099/zc.py"
-        sha256_gt = "875f1a952ff33dbc385f202b6945d7b77aa4c07317941e99bcd577ac51ac67ec"
+        fn = "tests/1402015/14020150099/homework.py"
+        sha256_gt = "ccd40fb582c2043cc117ff7e738c2ca6d88a29d477c8fec32811b238c4c8c198"
         sha256, _ = load_and_hash(fn)
         msg = "File has not been correctly loaded and hashed."
         msg += "\nExpected: " + sha256_gt
@@ -28,7 +28,7 @@ class TestFunctions(TestCase):
         self.assertEqual(name, name_ref, "Name is wrong.")
 
         student_id, _ = parse_subject("[PRML] HW1602-1402015005-周贤军")
-        self.assertIsNone(student_id, msg="Incorrect parse result.")
+        self.assertEqual(student_id, "1402015005", msg="Student ID is wrong.")
 
 
 class TestHomework(TestCase):
@@ -51,9 +51,6 @@ class TestHomework(TestCase):
 
     def test_check_local(self):
         hw = Homework(1000, self.header)
-        hw.check_local("/home/fred/lectures/xdufacool/1402015")
-        sha01 = "875f1a952ff33dbc385f202b6945d7b77aa4c07317941e99bcd577ac51ac67ec"
-        sha02 = "17d0cc6f198dc7fabdf70f98f7f948d553e758959a789247d49a0ee15bef86bc"
-
+        hw.check_local("tests/1402015")
+        sha01 = "ccd40fb582c2043cc117ff7e738c2ca6d88a29d477c8fec32811b238c4c8c198"
         self.assertIn(sha01, hw.data)
-        self.assertIn(sha02, hw.data)

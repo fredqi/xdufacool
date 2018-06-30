@@ -1,5 +1,3 @@
-from __future__ import print_function
-
 import datetime
 import email
 import imaplib
@@ -38,7 +36,8 @@ class MailHelper:
         if 'OK' != typ:
             print(typ, data)
 
-        items = data[0].split()
+        print(len(data), type(data), type(data[0]))
+        items = [str(dt, 'utf-8') for dt in data[0].split()]
         logtxt = u'%d mails to be processed.' % len(items)
         print(logtxt)
         return items
@@ -46,6 +45,7 @@ class MailHelper:
     def fetch_header(self, email_uid):
         """Retrieve the header of an email specified by return id."""
         fetch_fields = "(RFC822.SIZE BODY.PEEK[HEADER.FIELDS (%s)])"
+        # print(fetch_fields, self._fields, email_uid)
         status, data = self.imapclient.uid('fetch', email_uid,
                                            fetch_fields % " ".join(self._fields))
         if status != 'OK':
@@ -54,7 +54,7 @@ class MailHelper:
 
         header = {}
         parser = HeaderParser()
-        msg = parser.parsestr(data[0][1], True)
+        msg = parser.parsestr(str(data[0][1], 'utf-8'), True)
         for key, val in msg.items():
             if key in ['From', 'To']:
                 # email addresses include two parts, (realname, email_addr)
@@ -64,7 +64,11 @@ class MailHelper:
             else:
                 header[key.lower()] = MailHelper.iconv_header(val)
 
-        header['size'] = long(data[0][0].split()[2])
+        # header['size'] = long(data[0][0].split()[2])
+        header['size'] = int(data[0][0].split()[2])
+
+        # for key, val in header.items():
+        #     print(key, type(val), val)
 
         return header
 
@@ -77,8 +81,9 @@ class MailHelper:
         for respart in msg_data:
             if not isinstance(respart, tuple):
                 continue
-
-            msg = email.message_from_string(respart[1])
+            # print(respart)
+            # respart_content = str(respart[1], 'utf-8')
+            msg = email.message_from_bytes(respart[1])
             # An email with attachments must be multipart.
             if msg.get_content_maintype() != 'multipart':
                 continue
@@ -98,8 +103,9 @@ class MailHelper:
                 if c_type == 'text' and c_disp is None:
                     text = part.get_payload(decode=True)
                     encfmt = part.get_param('charset')
-                    if 'UTF-8' != encfmt:
-                        text = unicode(text, encfmt).encode('utf-8')
+                    # if 'UTF-8' != encfmt:
+                    # text = unicode(text, encfmt).encode('utf-8')
+                    text = text.decode(encfmt)
                     body += '\n' + text
 
                 if c_disp is None:
@@ -143,25 +149,22 @@ class MailHelper:
         # because all header items are encoded in base64.
         text, enc = decode_header(header)[0]
         if not enc:
-            return text.decode('utf-8')
+            return text # .decode('utf-8')
 
         # Some email senders wrongly encode GB18030
         # character as GB2312, a pity.
         if 'GB2312' == enc.upper():
             enc = 'GB18030'
-        if enc and 'UTF-8' != enc.upper():
-            text = unicode(text, enc).encode('utf-8')
-
-        return text.decode('utf-8')
+        if enc:
+            # text = unicode(text, enc).encode('utf-8')
+            text = text.decode(enc.upper())
+        return text # .decode('utf-8')
 
     @staticmethod
     def get_datetime(date_str):
         """Get a datetime object by parsing the string in an email header."""
-        dt_tuple = email.utils.parsedate_tz(date_str)
-        ts_local = email.utils.mktime_tz(dt_tuple)
-        tm_diff = datetime.timedelta(seconds=dt_tuple[-1])
-        dt_utc = datetime.datetime.fromtimestamp(ts_local) - tm_diff
-        return dt_utc
+        dt_parsed = email.utils.parsedate_to_datetime(date_str)
+        return dt_parsed
 
     @staticmethod
     def format_header(header, fields=None):
@@ -172,6 +175,6 @@ class MailHelper:
         for item in fields:
             if item in header:
                 value = header[item.lower()]
-                s = u'{0:>12}: {1}'.format(item.decode('utf-8'), value)
+                s = u'{0:>12}: {1}'.format(item, value)
                 lines.append(s)
         return lines

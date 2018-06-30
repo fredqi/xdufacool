@@ -15,7 +15,8 @@ class TestMailHelper(TestCase):
     def test_get_datetime(self):
         date_str = "Sat, 12 Nov 2016 11:29:23 +0800"
         dt = MailHelper.get_datetime(date_str)
-        dt_ref = datetime.datetime(2016, 11, 12, 3, 29, 23)
+        dt_ref = datetime.datetime(2016, 11, 12, 3, 29, 23,
+                                   tzinfo=datetime.timezone.utc)
         self.assertEqual(dt, dt_ref)
 
     def test_format_header(self):

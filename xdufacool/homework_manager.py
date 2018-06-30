@@ -1,4 +1,3 @@
-#!/usr/bin/env python
 # -*- coding: utf-8 -*-
 # ----------------------------------------------------------------------
 # 
@@ -9,8 +8,8 @@
 # ----------------------------------------------------------------------
 # ## CHANGE LOG
 # ----------------------------------------------------------------------
-# Last-Updated: 2017-05-31 13:51:39(+0800) [by Fred Qi]
-#     Update #: 1563
+# Last-Updated: 2018-06-30 19:17:36(+0800) [by Fred Qi]
+#     Update #: 1588
 # ----------------------------------------------------------------------
 from __future__ import print_function
 
@@ -30,10 +29,11 @@ from xdufacool.mail_helper import MailHelper
 
 def load_and_hash(filename):
     """Load a file from disk and calculate its SHA256 hash code."""
-    the_file = open(filename, 'rb')
-    data = the_file.read()
-    sha256 = hashlib.sha256(data)
-    return sha256.hexdigest(), data
+    with open(filename, 'rb') as the_file:
+        data = the_file.read()
+        sha256 = hashlib.sha256(data)
+        return sha256.hexdigest(), data
+    return None
 
 
 def parse_subject(subject):
@@ -156,7 +156,7 @@ class Homework():
             email_uid_prev = self.latest_email_uid
             self.latest_email_uid = email_uid
             self.info = dict(name=student_name)
-            for key, value in header.iteritems():
+            for key, value in header.items():
                 self.info[key] = value
             self.info['time'] = MailHelper.get_datetime(header['date'])
         return email_uid_prev
@@ -173,7 +173,7 @@ class Homework():
         if not os.path.exists(stu_path):
             os.mkdir(stu_path)
 
-        for key, value in self.data.iteritems():
+        for key, value in self.data.items():
             assert isinstance(value, tuple)
             assert 2 == len(value)
             fn, data = value
@@ -196,7 +196,7 @@ class Homework():
         fields = ['name', 'fromname', 'message-id']
         data = {key: self.info[key] for key in fields}
         exts, checksum = set(), list()
-        for sha, value in self.data.iteritems():
+        for sha, value in self.data.items():
             fn, _ = value
             checksum.append(sha + ' ' + fn)
             _, ext = os.path.splitext(fn)
@@ -237,7 +237,7 @@ class HomeworkManager:
                  email_addr="fred.qi@ieee.org"):
         self.class_id = class_id  # Class ID
         self.homeworks = dict()
-        self.mail_label = 'teaching'
+        self.mail_label = 'work/teaching'
 
         # Create a folder for the class
         if not os.path.exists(self.class_id):
@@ -304,12 +304,13 @@ def check_homeworks(download=True):
     email_uids = mh.search(mgr.mail_label, mcond)
     for euid in email_uids:
         header = mh.fetch_header(euid)
-        logtxt = u" ".join(["Processing", header['subject'],
-                            "from", header['from']])
+        logtxt = " ".join(["Processing", header['subject'],
+                           "from", header['from']])
         print(logtxt)
         student_id, _ = parse_subject(header['subject'])
         if student_id not in mgr.homeworks:
-            mgr.homeworks[student_id] = Homework(euid, header)
+            if header['from'] != Homework.email_teacher:
+                mgr.homeworks[student_id] = Homework(euid, header)
         else:
             email_uid_prev = mgr.homeworks[student_id].update(euid, header)
             # print(email_uid_prev, student_id)
@@ -318,8 +319,8 @@ def check_homeworks(download=True):
 
     idx_reply = 0
     cnt_total = len(mgr.homeworks)
-    for _, hw in mgr.homeworks.iteritems():
-        if download and not hw.is_confirmed():
+    for _, hw in mgr.homeworks.items():
+        if download:
             idx_reply += 1
             # hw.display()
             mail_size = hw.info['size'] * 1.0 / 1024
@@ -332,7 +333,7 @@ def check_homeworks(download=True):
             #       hw.student_id, type(hw.student_id))
             hw.save(body, attachments)
             hw.display()
-            if not test_mode:
+            if not (test_mode or hw.is_confirmed()):
                 to_addr, msg = hw.create_confirmation()
                 # print(to_addr)
                 mh.send_email(Homework.email_teacher, to_addr, msg)

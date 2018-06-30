@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 __descr__ = "A set of toolkit for faculty members in the Xidian University."
 

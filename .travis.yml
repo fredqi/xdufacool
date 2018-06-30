@@ -1,0 +1,16 @@
+language: python
+
+python:
+  - "3.5"
+
+branches:
+  only:
+  - master
+
+script:
+  - python3 setup.py test
+
+notifications:
+  email: false
+  slack: camerart:mf4rkoPcm628vBgvlbOk8zry
+      
