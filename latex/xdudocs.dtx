@@ -1,0 +1,323 @@
+% \iffalse meta-comment
+% vim: textwidth=75
+%<*internal>
+\iffalse
+%</internal>
+%<*readme>
+|
+-------:| -----------------------------------------------------------------
+xdudocs:| A new LaTeX class
+ Author:| Fei Qi
+ E-mail:| fred.qi@ieee.org
+License:| Released under the LaTeX Project Public License v1.3c or later
+    See:| http://www.latex-project.org/lppl.txt
+
+
+Short description:
+Some text about the class: probably the same as the abstract.
+%</readme>
+%<*internal>
+\fi
+\def\nameofplainTeX{plain}
+\ifx\fmtname\nameofplainTeX\else
+  \expandafter\begingroup
+\fi
+%</internal>
+%<*install>
+\input docstrip.tex
+\keepsilent
+\askforoverwritefalse
+\preamble
+-------:| -----------------------------------------------------------------
+xdudocs:| A new LaTeX class
+ Author:| Fei Qi
+ E-mail:| fred.qi@ieee.org
+License:| Released under the LaTeX Project Public License v1.3c or later
+    See:| http://www.latex-project.org/lppl.txt
+
+\endpreamble
+\postamble
+
+Copyright (C) 2018 by Fei Qi <fred.qi@ieee.org>
+
+This work may be distributed and/or modified under the
+conditions of the LaTeX Project Public License (LPPL), either
+version 1.3c of this license or (at your option) any later
+version.  The latest version of this license is in the file:
+
+http://www.latex-project.org/lppl.txt
+
+This work is "maintained" (as per LPPL maintenance status) by
+Fei Qi.
+
+This work consists of the file xdudocs.dtx and a Makefile.
+Running "make" generates the derived files README, xdudocs.pdf and xdudocs.cls.
+Running "make inst" installs the files in the user's TeX tree.
+Running "make install" installs the files in the local TeX tree.
+
+\endpostamble
+
+\usedir{tex/latex/xdudocs}
+\generate{
+  \file{xdusummary.cls}{\from{\jobname.dtx}{summary}}
+  \file{xduexam.cls}{\from{\jobname.dtx}{exam}}
+}
+%</install>
+%<install>\endbatchfile
+%<*internal>
+\usedir{source/latex/xdudocs}
+\generate{
+  \file{\jobname.ins}{\from{\jobname.dtx}{install}}
+}
+\nopreamble\nopostamble
+\usedir{doc/latex/xdudocs}
+\generate{
+  \file{README.txt}{\from{\jobname.dtx}{readme}}
+}
+\ifx\fmtname\nameofplainTeX
+  \expandafter\endbatchfile
+\else
+  \expandafter\endgroup
+\fi
+%</internal>
+% \fi
+%
+% \iffalse
+%<*driver>
+\ProvidesFile{xdudocs.dtx}
+%</driver>
+%<summary>\NeedsTeXFormat{LaTeX2e}[1999/12/01]
+%<summary>\ProvidesClass{xdudocs}
+%<*summary>
+    [2018/07/18 v1.00 XeLaTeX class for typesetting course summary in Xidian University]
+%</summary>
+%<*driver>
+\documentclass{ltxdoc}
+\usepackage[a4paper,margin=25mm,left=50mm,nohead]{geometry}
+\usepackage[numbered]{hypdoc}
+\usepackage[LoadFandol,AutoFakeBold]{xeCJK}
+\setCJKmainfont{FandolSong-Regular.otf}
+\setCJKfamilyfont{song}{FandolSong-Regular.otf}
+\setCJKfamilyfont{fang}{FandolFang-Regular.otf}
+\setCJKfamilyfont{hei}{FandolHei-Regular.otf}
+\EnableCrossrefs
+\CodelineIndex
+\RecordChanges
+\begin{document}
+  \DocInput{\jobname.dtx}
+\end{document}
+%</driver>
+% \fi
+%
+% \GetFileInfo{\jobname.dtx}
+% \DoNotIndex{\newcommand,\newenvironment}
+%
+%\title{\textsf{xdudocs} --- A new LaTeX class\thanks{This file
+%   describes version \fileversion, last revised \filedate.}
+%}
+%\author{Fei Qi\thanks{E-mail: fred.qi@ieee.org}}
+%\date{Released \filedate}
+%
+%\maketitle
+%
+%\changes{v1.00}{2018/07/18}{First public release}
+%
+% \begin{abstract}
+% ==== Put abstract text here. ====
+% \end{abstract}
+%
+% \section{Usage}
+%
+% ==== Put descriptive text here. ====
+%
+% \DescribeMacro{\dummyMacro}
+% This macro does nothing.\index{doing nothing|usage} It is merely an
+% example.  If this were a real macro, you would put a paragraph here
+% describing what the macro is supposed to do, what its mandatory and
+% optional arguments are, and so forth.
+%
+% \DescribeEnv{dummyEnv}
+% This environment does nothing.  It is merely an example.
+% If this were a real environment, you would put a paragraph here
+% describing what the environment is supposed to do, what its
+% mandatory and optional arguments are, and so forth.
+%
+%\StopEventually{^^A
+%  \PrintChanges
+%  \PrintIndex
+%}
+%
+% \section{Implementation}
+%
+%    \begin{macrocode}
+%<*summary>
+\LoadClass[a4paper,12pt]{article}
+\RequirePackage[vmargin=25mm,left=35mm,right=25mm]{geometry}
+\RequirePackage{datatool}
+\RequirePackage{longtable}
+\RequirePackage{pdfpages}
+\RequirePackage[LoadFandol,AutoFakeBold=3]{xeCJK}
+\RequirePackage{xeCJKfntef}
+\setCJKmainfont{FandolSong-Regular.otf}
+\setCJKfamilyfont{song}{FandolSong-Regular.otf}
+\setCJKfamilyfont{fang}{FandolFang-Regular.otf}
+\setCJKfamilyfont{hei}{FandolHei-Regular.otf}
+\xeCJKsetup{underline/format=\color{black}}
+%    \end{macrocode}
+% \begin{macro}{\song}
+% \begin{macro}{\fang}
+% \begin{macro}{\hei}
+% 用于改变中文字体的宏命令。|\song|、|\fang|和|\hei|分别用于将字体变换为宋体、仿
+% 宋体和黑体。
+%    \begin{macrocode}
+\newcommand{\song}{\CJKfamily{song}}
+\newcommand{\fang}{\CJKfamily{fang}}
+\newcommand{\hei}{\CJKfamily{hei}}
+%    \end{macrocode}
+% \end{macro}
+% \end{macro}
+% \end{macro}
+% \begin{macro}{\xiaosi}
+%    \begin{macrocode}
+\newlength\mynsfc@linespace
+\newcommand{\mynsfc@choosefont}[2]{%
+  \setlength{\mynsfc@linespace}{#2*\real{#1}}%
+  \fontsize{#2}{\mynsfc@linespace}\selectfont}
+\def\mynsfc@define@fontsize#1#2{%
+  \expandafter\newcommand\csname #1\endcsname[1][\baselinestretch]{%
+    \mynsfc@choosefont{##1}{#2}}}
+\mynsfc@define@fontsize{chuhao}{42bp}
+\mynsfc@define@fontsize{xiaochu}{36bp}
+\mynsfc@define@fontsize{yihao}{26bp}
+\mynsfc@define@fontsize{xiaoyi}{24bp}
+\mynsfc@define@fontsize{erhao}{22bp}
+\mynsfc@define@fontsize{xiaoer}{18bp}
+\mynsfc@define@fontsize{sanhao}{16bp}
+\mynsfc@define@fontsize{xiaosan}{15bp}
+\mynsfc@define@fontsize{sihao}{14bp}
+\mynsfc@define@fontsize{banxiaosi}{13bp}
+\mynsfc@define@fontsize{xiaosi}{12bp}
+\mynsfc@define@fontsize{dawu}{11bp}
+\mynsfc@define@fontsize{wuhao}{10.5bp}
+\mynsfc@define@fontsize{xiaowu}{9bp}
+\mynsfc@define@fontsize{liuhao}{7.5bp}
+\mynsfc@define@fontsize{xiaoliu}{6.5bp}
+\mynsfc@define@fontsize{qihao}{5.5bp}
+\mynsfc@define@fontsize{bahao}{5bp}
+%    \end{macrocode}
+% \end{macro}
+%    %    \begin{macrocode}
+\RequirePackage{titlesec}
+%    \end{macrocode}
+% \begin{macro}{\section}
+%    \begin{macrocode}
+\@addtoreset{section}{part}
+\titleformat{\section}{\CJKfamily{song}\bfseries\xiaoer\filcenter}{}{0em}{\clearpage}
+\titlespacing{\section}{0em}{4ex}{2ex}
+%    \end{macrocode}
+% \end{macro}
+%    \begin{macrocode}
+\def\xdu@define@term#1{
+  \expandafter\gdef\csname #1\endcsname##1{%
+    \expandafter\gdef\csname xdu@#1\endcsname{##1}}
+  \csname #1\endcsname{}}
+\def\xdu@urule#1#2{\hskip2pt\CJKunderline*[thickness=1.5bp]{\hb@xt@#1{\hss#2\hss}}\hskip3pt}
+%    \end{macrocode}
+% \begin{macro}{\course}
+% \begin{macro}{\category}
+% \begin{macro}{\hour}
+% \begin{macro}{\credit}
+% \begin{macro}{\classid}
+% \begin{macro}{\year}
+% \begin{macro}{\semester}
+%    \begin{macrocode}
+\xdu@define@term{course}
+\xdu@define@term{category}
+\xdu@define@term{hour}
+\xdu@define@term{credit}
+\xdu@define@term{classid}
+\xdu@define@term{year}
+\xdu@define@term{semester}
+\def\xdu@university{西安电子科技大学}
+\def\xdu@course@prefix{课程名称：}
+\def\xdu@category@prefix{课程性质：}
+\def\xdu@credit@prefix{学时学分：}
+\def\xdu@class@prefix{班\hspace{2em}级：}
+\def\xdu@teacher@prefix{主讲教师：}
+\def\xdu@date@prefix{填表时间：}
+\def\xdu@task@title{教学任务书}
+%    \end{macrocode}
+% \end{macro}
+% \end{macro}
+% \end{macro}
+% \end{macro}
+% \end{macro}
+% \end{macro}
+% \end{macro}
+% \begin{macro}{\makecover}
+%    \begin{macrocode}
+\renewcommand{\maketitle}{
+  \parbox[c][30mm]{\textwidth}{}\\[0mm]%
+  \makebox[\textwidth][c]{\CJKfamily{hei}\yihao\xdu@university}\\[18mm]%
+  \makebox[\textwidth][c]{\CJKfamily{hei}\chuhao\@title}\\[60mm]%
+  \CJKfamily{song}\bf\xiaoer%
+  \makebox[\textwidth][c]{%
+    \xdu@urule{45mm}{\xdu@year}学年{\xdu@semester}学期}\\[20mm]%
+  \makebox[\textwidth][c]{\renewcommand{\arraystretch}{1.65}%
+    \begin{tabular}{cc}%
+      \xdu@course@prefix & \xdu@urule{80mm}{\xdu@course}\\%
+      \xdu@category@prefix & \xdu@urule{80mm}{\xdu@category}\\%
+      \xdu@credit@prefix & \xdu@urule{80mm}{\xdu@hour~/~\xdu@credit} \\%
+      \xdu@class@prefix & \xdu@urule{80mm}{\xdu@classid}\\%
+      \xdu@teacher@prefix & \xdu@urule{80mm}{\@author}\\%
+      \xdu@date@prefix & \xdu@urule{80mm}{\@date}%
+    \end{tabular}}}
+%    \end{macrocode}
+% \end{macro}
+% \begin{macro}{\maketask}
+%    \begin{macrocode}
+\newcommand{\maketask}{%
+  \clearpage%
+  \parbox[c][25mm]{\textwidth}{}\\[0mm]%
+  \makebox[\textwidth][c]{%
+    \CJKfamily{hei}\erhao%
+    \makebox[52mm][s]{\xdu@task@title}}\\[16mm]%
+  \parbox{\textwidth}{
+    \CJKfamily{song}\xiaoer\bfseries
+    \@author 老师：\par
+    根据 \xdu@year 学年 \xdu@semester 学期教学计划的安
+    排， 经研究，决定请您担任~\xdu@classid~ 教学班 \xdu@course 课程的主讲（辅
+    导），该课程学时为 \xdu@hour 学时，请您按照教学大纲和课程进度表实施教学计划。}
+  %\end{minipage}
+\begin{flushright}%
+    \xdu@university\\%
+    （教学单位盖章）~\\%
+    年~~~~月~~~~日\\%
+  \end{flushright}}
+%    \end{macrocode}
+% \end{macro}
+% \begin{environment}{dummyEnv}
+% This is a dummy environment.  If it did anything, we'd describe its
+% implementation here.
+%    \begin{macrocode}
+\newenvironment{dummyEnv}{%
+}{%
+%    \end{macrocode}
+% \changes{v1.00a}{2018/07/18}{Added a spurious change log entry to
+%   show what a change \emph{within} an environment definition looks
+%   like.}
+% Don't use |%| to introduce a code comment within a |macrocode|
+% environment.  Instead, you should typeset all of your comments with
+% LaTeX---doing so gives much prettier results.  For comments within a
+% macro/environment body, just do an |\end{macrocode}|, include some
+% commentary, and do another |\begin{macrocode}|.  It's that simple.
+%    \begin{macrocode}
+}
+%    \end{macrocode}
+% \end{environment}
+%
+%    \begin{macrocode}
+\endinput
+%</summary>
+%    \end{macrocode}
+%\Finale
