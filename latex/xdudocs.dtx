@@ -97,9 +97,9 @@ Running "make install" installs the files in the local TeX tree.
 \usepackage[numbered]{hypdoc}
 \usepackage[LoadFandol,AutoFakeBold]{xeCJK}
 \setCJKmainfont{FandolSong-Regular.otf}
-\setCJKfamilyfont{song}{FandolSong-Regular.otf}
-\setCJKfamilyfont{fang}{FandolFang-Regular.otf}
-\setCJKfamilyfont{hei}{FandolHei-Regular.otf}
+\newCJKfontfamily[song]\song{FandolSong-Regular.otf}
+\newCJKfontfamily[fang]\fang{FandolFang-Regular.otf}
+\newCJKfontfamily[hei]\hei{FandolHei-Regular.otf}
 \EnableCrossrefs
 \CodelineIndex
 \RecordChanges
@@ -153,16 +153,9 @@ Running "make install" installs the files in the local TeX tree.
 %<*summary>
 \LoadClass[a4paper,12pt]{article}
 \RequirePackage[vmargin=25mm,left=35mm,right=25mm]{geometry}
-\RequirePackage{datatool}
-\RequirePackage{longtable}
 \RequirePackage{pdfpages}
-\RequirePackage[LoadFandol,AutoFakeBold=3]{xeCJK}
+\RequirePackage[LoadFandol,AutoFakeBold=2]{xeCJK}
 \RequirePackage{xeCJKfntef}
-\setCJKmainfont{FandolSong-Regular.otf}
-\setCJKfamilyfont{song}{FandolSong-Regular.otf}
-\setCJKfamilyfont{fang}{FandolFang-Regular.otf}
-\setCJKfamilyfont{hei}{FandolHei-Regular.otf}
-\xeCJKsetup{underline/format=\color{black}}
 %    \end{macrocode}
 % \begin{macro}{\song}
 % \begin{macro}{\fang}
@@ -170,40 +163,43 @@ Running "make install" installs the files in the local TeX tree.
 % 用于改变中文字体的宏命令。|\song|、|\fang|和|\hei|分别用于将字体变换为宋体、仿
 % 宋体和黑体。
 %    \begin{macrocode}
-\newcommand{\song}{\CJKfamily{song}}
-\newcommand{\fang}{\CJKfamily{fang}}
-\newcommand{\hei}{\CJKfamily{hei}}
+\setCJKmainfont[SizeFeatures={Size=18}]{FandolSong-Regular.otf}
+\newCJKfontfamily[song]\song{FandolSong-Regular.otf}
+\newCJKfontfamily[fang]\fang{FandolFang-Regular.otf}
+\newCJKfontfamily[hei]\hei{FandolHei-Regular.otf}
+\xeCJKsetup{underline/format=\color{black}}
 %    \end{macrocode}
 % \end{macro}
 % \end{macro}
 % \end{macro}
 % \begin{macro}{\xiaosi}
 %    \begin{macrocode}
-\newlength\mynsfc@linespace
-\newcommand{\mynsfc@choosefont}[2]{%
-  \setlength{\mynsfc@linespace}{#2*\real{#1}}%
-  \fontsize{#2}{\mynsfc@linespace}\selectfont}
-\def\mynsfc@define@fontsize#1#2{%
+\newlength\xdu@linespace
+\newcommand{\xdu@choosefont}[2]{%
+  \setlength{\xdu@linespace}{#2*\real{#1}}%
+  \setlength{\parindent}{2em}%
+  \fontsize{#2}{\xdu@linespace}\selectfont}
+\def\xdu@define@fontsize#1#2{%
   \expandafter\newcommand\csname #1\endcsname[1][\baselinestretch]{%
-    \mynsfc@choosefont{##1}{#2}}}
-\mynsfc@define@fontsize{chuhao}{42bp}
-\mynsfc@define@fontsize{xiaochu}{36bp}
-\mynsfc@define@fontsize{yihao}{26bp}
-\mynsfc@define@fontsize{xiaoyi}{24bp}
-\mynsfc@define@fontsize{erhao}{22bp}
-\mynsfc@define@fontsize{xiaoer}{18bp}
-\mynsfc@define@fontsize{sanhao}{16bp}
-\mynsfc@define@fontsize{xiaosan}{15bp}
-\mynsfc@define@fontsize{sihao}{14bp}
-\mynsfc@define@fontsize{banxiaosi}{13bp}
-\mynsfc@define@fontsize{xiaosi}{12bp}
-\mynsfc@define@fontsize{dawu}{11bp}
-\mynsfc@define@fontsize{wuhao}{10.5bp}
-\mynsfc@define@fontsize{xiaowu}{9bp}
-\mynsfc@define@fontsize{liuhao}{7.5bp}
-\mynsfc@define@fontsize{xiaoliu}{6.5bp}
-\mynsfc@define@fontsize{qihao}{5.5bp}
-\mynsfc@define@fontsize{bahao}{5bp}
+    \xdu@choosefont{##1}{#2}}}
+\xdu@define@fontsize{chuhao}{42pt}
+\xdu@define@fontsize{xiaochu}{36pt}
+\xdu@define@fontsize{yihao}{26pt}
+\xdu@define@fontsize{xiaoyi}{24pt}
+\xdu@define@fontsize{erhao}{22pt}
+\xdu@define@fontsize{xiaoer}{18pt}
+\xdu@define@fontsize{sanhao}{16pt}
+\xdu@define@fontsize{xiaosan}{15pt}
+\xdu@define@fontsize{sihao}{14pt}
+\xdu@define@fontsize{banxiaosi}{13pt}
+\xdu@define@fontsize{xiaosi}{12pt}
+\xdu@define@fontsize{dawu}{11pt}
+\xdu@define@fontsize{wuhao}{10.5pt}
+\xdu@define@fontsize{xiaowu}{9pt}
+\xdu@define@fontsize{liuhao}{7.5pt}
+\xdu@define@fontsize{xiaoliu}{6.5pt}
+\xdu@define@fontsize{qihao}{5.5pt}
+\xdu@define@fontsize{bahao}{5pt}
 %    \end{macrocode}
 % \end{macro}
 %    %    \begin{macrocode}
@@ -212,7 +208,8 @@ Running "make install" installs the files in the local TeX tree.
 % \begin{macro}{\section}
 %    \begin{macrocode}
 \@addtoreset{section}{part}
-\titleformat{\section}{\CJKfamily{song}\bfseries\xiaoer\filcenter}{}{0em}{\clearpage}
+\titleformat{\section}{\CJKfamily{song}\bfseries\xiaoer\filcenter}%
+            {}{0em}{\clearpage}
 \titlespacing{\section}{0em}{4ex}{2ex}
 %    \end{macrocode}
 % \end{macro}
@@ -221,7 +218,8 @@ Running "make install" installs the files in the local TeX tree.
   \expandafter\gdef\csname #1\endcsname##1{%
     \expandafter\gdef\csname xdu@#1\endcsname{##1}}
   \csname #1\endcsname{}}
-\def\xdu@urule#1#2{\hskip2pt\CJKunderline*[thickness=1.5bp]{\hb@xt@#1{\hss#2\hss}}\hskip3pt}
+\def\xdu@urule#1#2{\hskip2pt\CJKunderline*[thickness=1.5pt]%
+  {\hb@xt@#1{\hss#2\hss}}\hskip3pt}
 %    \end{macrocode}
 % \begin{macro}{\course}
 % \begin{macro}{\category}
@@ -282,20 +280,44 @@ Running "make install" installs the files in the local TeX tree.
   \makebox[\textwidth][c]{%
     \CJKfamily{hei}\erhao%
     \makebox[52mm][s]{\xdu@task@title}}\\[16mm]%
-  \parbox{\textwidth}{
-    \CJKfamily{song}\xiaoer\bfseries
-    \@author 老师：\par
-    根据 \xdu@year 学年 \xdu@semester 学期教学计划的安
-    排， 经研究，决定请您担任~\xdu@classid~ 教学班 \xdu@course 课程的主讲（辅
-    导），该课程学时为 \xdu@hour 学时，请您按照教学大纲和课程进度表实施教学计划。}
-  %\end{minipage}
-\begin{flushright}%
+  {\CJKfamily{song}\bfseries\xiaoer\linespread{1.6}\selectfont%
+    {\noindent\xdu@urule{10em}{\@author}老师：\par}%
+    根据\xdu@urule{7em}{\xdu@year}学年\xdu@urule{4em}{\xdu@semester}学期教学计划%
+    的安排， 经研究，决定请您担任\xdu@urule{7em}{\xdu@classid}教学%
+    班\xdu@urule{10em}{\xdu@course}课程的主讲（辅导），该课程学时%
+    为\xdu@urule{3em}{\xdu@hour}学时，请您按照教学大纲和课程进度表实施教学计%
+    划。\par\parbox[c][25mm]{\textwidth}{}\\[0mm]%
+  \begin{flushright}%
     \xdu@university\\%
-    （教学单位盖章）~\\%
+    （教学单位盖章）\\%
     年~~~~月~~~~日\\%
-  \end{flushright}}
+  \end{flushright}}}
 %    \end{macrocode}
 % \end{macro}
+% \begin{macro}{\processtable}
+%    \begin{macrocode}
+\RequirePackage{datatool}
+\RequirePackage{array}
+\RequirePackage{longtable}
+\newcommand{\processtable}[1]{
+  \song\wuhao\bfseries%
+  \begin{center}%
+    （主要记录学生日程考勤、作业、课内练习、课程设计等过程考核的记录和得分情况，%
+    表格标题可根据情况修改，纵向列数或横向行数可自主增加或删减）%
+  \end{center}\vskip-7mm%  
+  \DTLloaddb{sproc}{#1}%
+  \renewcommand{\arraystretch}{1.5}%
+  \begin{longtable}{|c|c|c|}%
+    \hline\endfoot%
+    \hline 序号 & 学生姓名 & \\\hline%
+    \endfirsthead%
+    \DTLforeach{sproc}{\order=order,\name=name}{%
+    \order & \name & \DTLiflastrow{}{\\\hline}}%
+  \end{longtable}}
+%    \end{macrocode}
+% 
+% \end{macro}
+% 
 % \begin{environment}{dummyEnv}
 % This is a dummy environment.  If it did anything, we'd describe its
 % implementation here.
