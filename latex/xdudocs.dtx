@@ -152,10 +152,11 @@ Running "make install" installs the files in the local TeX tree.
 %    \begin{macrocode}
 %<*summary>
 \LoadClass[a4paper,12pt]{article}
-\RequirePackage[vmargin=25mm,left=35mm,right=25mm]{geometry}
+\RequirePackage[vmargin=25mm,hmargin=30mm]{geometry}
 \RequirePackage{pdfpages}
 \RequirePackage[LoadFandol,AutoFakeBold=2]{xeCJK}
 \RequirePackage{xeCJKfntef}
+\RequirePackage{zhnumber}
 %    \end{macrocode}
 % \begin{macro}{\song}
 % \begin{macro}{\fang}
@@ -206,12 +207,20 @@ Running "make install" installs the files in the local TeX tree.
 \RequirePackage{titlesec}
 %    \end{macrocode}
 % \begin{macro}{\section}
+% \begin{macro}{\subsection}
 %    \begin{macrocode}
 \@addtoreset{section}{part}
-\titleformat{\section}{\CJKfamily{song}\bfseries\xiaoer\filcenter}%
+\titleformat{\section}{\song\bfseries\xiaoer\filcenter}%
             {}{0em}{\clearpage}
-\titlespacing{\section}{0em}{4ex}{2ex}
+\titlespacing{\section}{0em}{1ex}{0ex}
+\titleformat{\subsection}{\song\bfseries\sihao}%
+            {\zhnum{subsection}、}{0em}{}
+\titlespacing{\subsection}{0em}{1ex}{0ex}
+\titleformat{\subsubsection}{\song\bfseries\sihao}%
+            {\arabic{subsubsection}、}{0em}{}
+\titlespacing{\subsubsection}{2em}{1ex}{0ex}
 %    \end{macrocode}
+% \end{macro}
 % \end{macro}
 %    \begin{macrocode}
 \def\xdu@define@term#1{
@@ -256,9 +265,9 @@ Running "make install" installs the files in the local TeX tree.
 %    \begin{macrocode}
 \renewcommand{\maketitle}{
   \parbox[c][30mm]{\textwidth}{}\\[0mm]%
-  \makebox[\textwidth][c]{\CJKfamily{hei}\yihao\xdu@university}\\[18mm]%
-  \makebox[\textwidth][c]{\CJKfamily{hei}\chuhao\@title}\\[60mm]%
-  \CJKfamily{song}\bf\xiaoer%
+  \makebox[\textwidth][c]{\hei\yihao\xdu@university}\\[18mm]%
+  \makebox[\textwidth][c]{\hei\chuhao\@title}\\[60mm]%
+  \song\bfseries\xiaoer%
   \makebox[\textwidth][c]{%
     \xdu@urule{45mm}{\xdu@year}学年{\xdu@semester}学期}\\[20mm]%
   \makebox[\textwidth][c]{\renewcommand{\arraystretch}{1.65}%
@@ -278,9 +287,8 @@ Running "make install" installs the files in the local TeX tree.
   \clearpage%
   \parbox[c][25mm]{\textwidth}{}\\[0mm]%
   \makebox[\textwidth][c]{%
-    \CJKfamily{hei}\erhao%
-    \makebox[52mm][s]{\xdu@task@title}}\\[16mm]%
-  {\CJKfamily{song}\bfseries\xiaoer\linespread{1.6}\selectfont%
+    \hei\erhao\makebox[52mm][s]{\xdu@task@title}}\\[16mm]%
+  {\song\bfseries\xiaoer\linespread{1.6}\selectfont%
     {\noindent\xdu@urule{10em}{\@author}老师：\par}%
     根据\xdu@urule{7em}{\xdu@year}学年\xdu@urule{4em}{\xdu@semester}学期教学计划%
     的安排， 经研究，决定请您担任\xdu@urule{7em}{\xdu@classid}教学%
@@ -294,12 +302,12 @@ Running "make install" installs the files in the local TeX tree.
   \end{flushright}}}
 %    \end{macrocode}
 % \end{macro}
-% \begin{macro}{\processtable}
+% \begin{macro}{\usualscores}
 %    \begin{macrocode}
 \RequirePackage{datatool}
 \RequirePackage{array}
 \RequirePackage{longtable}
-\newcommand{\processtable}[1]{
+\newcommand{\usualscores}[1]{
   \song\wuhao\bfseries%
   \begin{center}%
     （主要记录学生日程考勤、作业、课内练习、课程设计等过程考核的记录和得分情况，%
@@ -307,23 +315,57 @@ Running "make install" installs the files in the local TeX tree.
   \end{center}\vskip-7mm%  
   \DTLloaddb{sproc}{#1}%
   \renewcommand{\arraystretch}{1.5}%
-  \begin{longtable}{|c|c|c|}%
+  \begin{longtable}{|c|c|c|c|c|c|c|c|p{3em}|}%
     \hline\endfoot%
-    \hline 序号 & 学生姓名 & \\\hline%
+    \hline%
+    序号 & 学生姓名 & 考勤1 & 考勤2 & 作业1 & 作业2 & 作业3 & 课程设计 & \\%
+    \hline%
     \endfirsthead%
-    \DTLforeach{sproc}{\order=order,\name=name}{%
-    \order & \name & \DTLiflastrow{}{\\\hline}}%
+    \DTLforeach{sproc}{\order=order,\name=name,\attI=att1,\attII=att2,%
+                       \hwI=hw1,\hwII=hw2,\hwIII=hw3,\design=design}{%
+    \order & \name & \attI & \attII & \hwI & \hwII & \hwIII & \design &%
+    \DTLiflastrow{}{\\\hline}}%
   \end{longtable}}
 %    \end{macrocode}
-% 
 % \end{macro}
-% 
-% \begin{environment}{dummyEnv}
+% \begin{macro}{\courserecords}
+%    \begin{macrocode}
+\newcommand{\courserecords}[1]{
+  \song\wuhao\bfseries%
+  （注：1课次为2学时，教学过程记录主要对该知识点的具体教学内容、教学过程中发现的
+  问题等进行记录）\par\vskip-2mm%
+  \DTLloaddb{dbrecord}{#1}%
+  \song\sanhao\bfseries%\setlength{\extrarowheight}{32pt}%
+  \begin{longtable}{|c|>{\centering}m{49mm}|%
+    >{\centering\arraybackslash}m{75mm}|}%
+    \hline\endfoot%
+    \hline%
+    课次 & 上课时间和知识点 & 教学过程记录 \\\hline%
+    \endfirsthead%
+    \DTLforeach{dbrecord}{\order=order,\time=time,\points=points,\record=record}{%
+      \makebox[2em][c]{\parbox[c][20mm]{0mm}{}\order} &%
+      \time\par\points & \record \DTLiflastrow{}{\\\hline}}%
+  \end{longtable}}
+%    \end{macrocode}
+% \end{macro}
+% \begin{macro}{\extfbox}
+%    \begin{macrocode}
+\newcommand{\extfbox}[2][1in]{
+  \setlength{\fboxrule}{1pt}\noindent%
+  \fbox{
+  \begin{minipage}{1.0\linewidth}%
+    #2\vspace{#1}%
+  \end{minipage}}%
+}
+%    \end{macrocode}
+% \end{macro}
+% \begin{environment}{framedenv}
 % This is a dummy environment.  If it did anything, we'd describe its
 % implementation here.
 %    \begin{macrocode}
-\newenvironment{dummyEnv}{%
-}{%
+\newenvironment{framedenv}{%
+  \begin{minipage}{1.0\linewidth}%
+}{\end{minipage}}
 %    \end{macrocode}
 % \changes{v1.00a}{2018/07/18}{Added a spurious change log entry to
 %   show what a change \emph{within} an environment definition looks
@@ -334,7 +376,6 @@ Running "make install" installs the files in the local TeX tree.
 % macro/environment body, just do an |\end{macrocode}|, include some
 % commentary, and do another |\begin{macrocode}|.  It's that simple.
 %    \begin{macrocode}
-}
 %    \end{macrocode}
 % \end{environment}
 %
