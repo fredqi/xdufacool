@@ -164,7 +164,7 @@ Running "make install" installs the files in the local TeX tree.
 % 用于改变中文字体的宏命令。|\song|、|\fang|和|\hei|分别用于将字体变换为宋体、仿
 % 宋体和黑体。
 %    \begin{macrocode}
-\setCJKmainfont[SizeFeatures={Size=18}]{FandolSong-Regular.otf}
+\setCJKmainfont{FandolSong-Regular.otf}
 \newCJKfontfamily[song]\song{FandolSong-Regular.otf}
 \newCJKfontfamily[fang]\fang{FandolFang-Regular.otf}
 \newCJKfontfamily[hei]\hei{FandolHei-Regular.otf}
@@ -211,7 +211,7 @@ Running "make install" installs the files in the local TeX tree.
 %    \begin{macrocode}
 \@addtoreset{section}{part}
 \titleformat{\section}{\song\bfseries\xiaoer\filcenter}%
-            {}{0em}{\clearpage}
+            {}{0em}{}
 \titlespacing{\section}{0em}{1ex}{0ex}
 \titleformat{\subsection}{\song\bfseries\sihao}%
             {\zhnum{subsection}、}{0em}{}
@@ -219,6 +219,10 @@ Running "make install" installs the files in the local TeX tree.
 \titleformat{\subsubsection}{\song\bfseries\sihao}%
             {\arabic{subsubsection}、}{0em}{}
 \titlespacing{\subsubsection}{2em}{1ex}{0ex}
+\let\xdu@old@section=\section
+\def\section{\@ifstar\xdu@section\xdu@@section}
+\def\xdu@section#1{\xdu@old@section{#1}}
+\def\xdu@@section#1{\clearpage\xdu@old@section{#1}}
 %    \end{macrocode}
 % \end{macro}
 % \end{macro}
@@ -264,7 +268,7 @@ Running "make install" installs the files in the local TeX tree.
 % \begin{macro}{\makecover}
 %    \begin{macrocode}
 \renewcommand{\maketitle}{
-  \parbox[c][30mm]{\textwidth}{}\\[0mm]%
+  \begingroup\parbox[c][30mm]{\textwidth}{}\\[0mm]%
   \makebox[\textwidth][c]{\hei\yihao\xdu@university}\\[18mm]%
   \makebox[\textwidth][c]{\hei\chuhao\@title}\\[60mm]%
   \song\bfseries\xiaoer%
@@ -278,14 +282,14 @@ Running "make install" installs the files in the local TeX tree.
       \xdu@class@prefix & \xdu@urule{80mm}{\xdu@classid}\\%
       \xdu@teacher@prefix & \xdu@urule{80mm}{\@author}\\%
       \xdu@date@prefix & \xdu@urule{80mm}{\@date}%
-    \end{tabular}}}
+    \end{tabular}}\endgroup}
 %    \end{macrocode}
 % \end{macro}
 % \begin{macro}{\maketask}
 %    \begin{macrocode}
 \newcommand{\maketask}{%
   \clearpage%
-  \parbox[c][25mm]{\textwidth}{}\\[0mm]%
+  \begingroup\parbox[c][25mm]{\textwidth}{}\\[0mm]%
   \makebox[\textwidth][c]{%
     \hei\erhao\makebox[52mm][s]{\xdu@task@title}}\\[16mm]%
   {\song\bfseries\xiaoer\linespread{1.6}\selectfont%
@@ -299,7 +303,8 @@ Running "make install" installs the files in the local TeX tree.
     \xdu@university\\%
     （教学单位盖章）\\%
     年~~~~月~~~~日\\%
-  \end{flushright}}}
+  \end{flushright}}%
+\endgroup}
 %    \end{macrocode}
 % \end{macro}
 % \begin{macro}{\usualscores}
@@ -308,7 +313,7 @@ Running "make install" installs the files in the local TeX tree.
 \RequirePackage{array}
 \RequirePackage{longtable}
 \newcommand{\usualscores}[1]{
-  \song\wuhao\bfseries%
+  \begingroup\song\wuhao\bfseries%
   \begin{center}%
     （主要记录学生日程考勤、作业、课内练习、课程设计等过程考核的记录和得分情况，%
     表格标题可根据情况修改，纵向列数或横向行数可自主增加或删减）%
@@ -325,7 +330,7 @@ Running "make install" installs the files in the local TeX tree.
                        \hwI=hw1,\hwII=hw2,\hwIII=hw3,\design=design}{%
     \order & \name & \attI & \attII & \hwI & \hwII & \hwIII & \design &%
     \DTLiflastrow{}{\\\hline}}%
-  \end{longtable}}
+  \end{longtable}\endgroup}
 %    \end{macrocode}
 % \end{macro}
 % \begin{macro}{\courserecords}
@@ -359,17 +364,14 @@ Running "make install" installs the files in the local TeX tree.
 }
 %    \end{macrocode}
 % \end{macro}
-% \begin{environment}{framedenv}
+% \begin{environment}{dummyEnv}
 % This is a dummy environment.  If it did anything, we'd describe its
 % implementation here.
 %    \begin{macrocode}
-\newenvironment{framedenv}{%
+\newenvironment{dummyEnv}{%
   \begin{minipage}{1.0\linewidth}%
 }{\end{minipage}}
 %    \end{macrocode}
-% \changes{v1.00a}{2018/07/18}{Added a spurious change log entry to
-%   show what a change \emph{within} an environment definition looks
-%   like.}
 % Don't use |%| to introduce a code comment within a |macrocode|
 % environment.  Instead, you should typeset all of your comments with
 % LaTeX---doing so gives much prettier results.  For comments within a
