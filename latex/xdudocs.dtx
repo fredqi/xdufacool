@@ -153,7 +153,6 @@ Running "make install" installs the files in the local TeX tree.
 %<*summary>
 \LoadClass[a4paper,12pt]{article}
 \RequirePackage[vmargin=25mm,hmargin=30mm]{geometry}
-\RequirePackage{pdfpages}
 \RequirePackage[LoadFandol,AutoFakeBold=2]{xeCJK}
 \RequirePackage{xeCJKfntef}
 \RequirePackage{zhnumber}
@@ -178,8 +177,8 @@ Running "make install" installs the files in the local TeX tree.
 \newlength\xdu@linespace
 \newcommand{\xdu@choosefont}[2]{%
   \setlength{\xdu@linespace}{#2*\real{#1}}%
-  \setlength{\parindent}{2em}%
-  \fontsize{#2}{\xdu@linespace}\selectfont}
+  \fontsize{#2}{\xdu@linespace}\selectfont%
+  \setlength{\parindent}{2em}}
 \def\xdu@define@fontsize#1#2{%
   \expandafter\newcommand\csname #1\endcsname[1][\baselinestretch]{%
     \xdu@choosefont{##1}{#2}}}
@@ -203,7 +202,18 @@ Running "make install" installs the files in the local TeX tree.
 \xdu@define@fontsize{bahao}{5pt}
 %    \end{macrocode}
 % \end{macro}
-%    %    \begin{macrocode}
+% \begin{macro}{\ps@xdufooter}
+%    \begin{macrocode}
+\def\ps@xdufooter{%
+  \let\@oddhead\@empty%
+  \let\@evenhead\@empty%
+  \def\@oddfoot{\hbox to\textwidth{\hfill\xiaowu\thepage-}}%
+  \def\@evenfoot{\hbox to\textwidth{\hfill\xiaowu\thepage-}}%
+}
+%    \end{macrocode}
+% \end{macro}
+% 
+%    \begin{macrocode}
 \RequirePackage{titlesec}
 %    \end{macrocode}
 % \begin{macro}{\section}
@@ -214,7 +224,7 @@ Running "make install" installs the files in the local TeX tree.
             {}{0em}{}
 \titlespacing{\section}{0em}{1ex}{0ex}
 \titleformat{\subsection}{\song\bfseries\sihao}%
-            {\zhnum{subsection}、}{0em}{}
+            {\zhnum{subsection}、}{0em}{}{}
 \titlespacing{\subsection}{0em}{1ex}{0ex}
 \titleformat{\subsubsection}{\song\bfseries\sihao}%
             {\arabic{subsubsection}、}{0em}{}
@@ -312,6 +322,9 @@ Running "make install" installs the files in the local TeX tree.
 \RequirePackage{datatool}
 \RequirePackage{array}
 \RequirePackage{longtable}
+\RequirePackage{pdfpages}
+\RequirePackage{amsmath,amssymb}
+\RequirePackage{multirow}
 \newcommand{\usualscores}[1]{
   \begingroup\song\wuhao\bfseries%
   \begin{center}%
@@ -335,8 +348,8 @@ Running "make install" installs the files in the local TeX tree.
 % \end{macro}
 % \begin{macro}{\courserecords}
 %    \begin{macrocode}
-\newcommand{\courserecords}[1]{
-  \song\wuhao\bfseries%
+\newcommand{\courserecords}[1]{%
+  \begingroup\song\wuhao\bfseries%
   （注：1课次为2学时，教学过程记录主要对该知识点的具体教学内容、教学过程中发现的
   问题等进行记录）\par\vskip-2mm%
   \DTLloaddb{dbrecord}{#1}%
@@ -350,18 +363,20 @@ Running "make install" installs the files in the local TeX tree.
     \DTLforeach{dbrecord}{\order=order,\time=time,\points=points,\record=record}{%
       \makebox[2em][c]{\parbox[c][20mm]{0mm}{}\order} &%
       \time\par\points & \record \DTLiflastrow{}{\\\hline}}%
-  \end{longtable}}
+  \end{longtable}%
+  \endgroup}
 %    \end{macrocode}
 % \end{macro}
 % \begin{macro}{\extfbox}
 %    \begin{macrocode}
-\newcommand{\extfbox}[2][1in]{
+\newcommand{\extfbox}[2][1in]{%
+  \begingroup%
   \setlength{\fboxrule}{1pt}\noindent%
   \fbox{
   \begin{minipage}{1.0\linewidth}%
     #2\vspace{#1}%
   \end{minipage}}%
-}
+  \endgroup}
 %    \end{macrocode}
 % \end{macro}
 % \begin{environment}{dummyEnv}
