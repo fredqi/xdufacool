@@ -43,7 +43,8 @@ def setup_package():
                     packages=find_packages(include=('xdufacool',)),
                     # scripts
                     entry_points={'console_scripts':
-                                      ['xdufacool = xdufacool.homework_manager:check_homeworks']},
+                                      ['xdufacool = xdufacool.homework_manager:check_homeworks',
+                                       'pdf2pptx  = xdufacool.pdf2pptx:pdf2pptx']},
                     # unit tests
                     test_suite="tests")
     if (len(sys.argv) >= 2
