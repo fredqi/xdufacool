@@ -4,8 +4,8 @@
 # Author: Fred Qi
 # Created: 2020-02-14 22:43:36(+0800)
 #
-# Last-Updated: 2020-02-15 23:37:29(+0800) [by Fred Qi]
-#     Update #: 147
+# Last-Updated: 2020-02-25 10:27:48(+0800) [by Fred Qi]
+#     Update #: 171
 # 
 
 # Commentary:
@@ -25,10 +25,8 @@ from pdf2image import convert_from_path
 from pptx import Presentation
 from pptx.util import Inches
 
-pdf_file = 'ch00-background-SARS-Cov-2.pdf'
 
-
-def pdf_slide_to_pptx(slide_file, output_folder, dpi=200):
+def pdf_slide_to_pptx(slide_file, output_folder, template=None, dpi=200):
     """
     To convert a pdf slide given by slide_file to a PPTX file.
     """
@@ -46,11 +44,15 @@ def pdf_slide_to_pptx(slide_file, output_folder, dpi=200):
 
     image_paths = []
     for idx, image in enumerate(images):
+        # print(type(image), image.getbbox())
         image_path = os.path.join(image_folder, f'image{idx:02d}.jpg')
         image.save(image_path)
         image_paths.append(image_path)
 
-    prs = Presentation()
+    if template is None:
+        prs = Presentation()
+    else:
+        prs = Presentation(template)
     blank_slide_layout = prs.slide_layouts[6]
 
     left = top = 0
@@ -67,16 +69,21 @@ def pdf2pptx():
     """Parsing command line arguments and make the pdf to pptx convertion."""
     
     parser = argparse.ArgumentParser(description='Convert a PDF slide to a PPTX file')
-    parser.add_argument('--dpi', '-d', default=200, type=int, dest='dpi',
+    parser.add_argument('--dpi', '-d', default=200, type=int,
                         help='The dpi of the converted image of a page in a PDF slide.')
+    parser.add_argument('--template', '-t', default='', type=str,
+                        help='The template PPTX file to create new presentations.')
     parser.add_argument('--output_folder', '-o', default='pptx', type=str,
-                        dest='output_folder', help='The output folder of the PPTX file.')
+                        help='The output folder of the PPTX file.')
     parser.add_argument('slide', type=str,
                         help='The filename of the PDF slide to be converted.')
 
     args = parser.parse_args()
-    
-    pdf_slide_to_pptx(args.slide, output_folder=args.output_folder, dpi=args.dpi)
+    # print(args)
+    options = {'output_folder': args.output_folder, 'dpi': args.dpi}
+    if os.path.isfile(args.template):
+        options['template'] = args.template
+    pdf_slide_to_pptx(args.slide, **options)
 
 
 if __name__ == '__main__':
