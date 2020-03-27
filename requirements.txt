@@ -1,0 +1,3 @@
+pyyaml
+pdf2image
+bibtexparser

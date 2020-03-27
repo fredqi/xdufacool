@@ -44,7 +44,8 @@ def setup_package():
                     # scripts
                     entry_points={'console_scripts':
                                       ['xdufacool = xdufacool.homework_manager:check_homeworks',
-                                       'pdf2pptx  = xdufacool.pdf2pptx:pdf2pptx']},
+                                       'pdf2pptx  = xdufacool.pdf2pptx:pdf2pptx',
+                                       'arxort = xdufacool.organize_bib:organize_bib']},
                     # unit tests
                     test_suite="tests")
     if (len(sys.argv) >= 2
