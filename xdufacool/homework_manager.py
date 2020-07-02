@@ -8,8 +8,8 @@
 # ----------------------------------------------------------------------
 # ## CHANGE LOG
 # ----------------------------------------------------------------------
-# Last-Updated: 2018-07-01 11:15:22(+0800) [by Fred Qi]
-#     Update #: 1589
+# Last-Updated: 2020-07-02 13:37:54(+0800) [by Fred Qi]
+#     Update #: 1623
 # ----------------------------------------------------------------------
 from __future__ import print_function
 
@@ -48,13 +48,16 @@ def parse_subject(subject):
     <school> = 02 means a student of School of Electronic Engineering
     """
     if not hasattr(parse_subject, 're_id'):
-        parse_subject.re_id = re.compile(r'(?P<stuid>[0-9]{9,11}|X{3,5})')
+        parse_subject.re_id = re.compile(r'(?P<stuid>[0-9xtXT]{9,12}|X{3,5})')
+    if not hasattr(parse_subject, 'year'):
+        parse_subject.year = re.compile(r'(?P<year>2020)')
     student_id, name = None, None
     m = parse_subject.re_id.search(subject)
-    if m is not None:
+    my = parse_subject.year.search(subject)
+    if m is not None and my is not None:
         student_id = m.group('stuid')
-        if m.end('stuid') + 1 < len(subject):
-            name = subject[m.end('stuid') + 1:]
+        if my.end('year') < m.end('stuid'):
+            name = subject[my.end('year') + 1 : m.start('stuid') - 1]
     return student_id, name
 
 
@@ -82,16 +85,19 @@ class Homework():
 
         Homework.mail_template = u"""亲爱的{name}({fromname})同学：
 
-你通过邮件 {message-id} 提交的作业已经收到。
+您通过邮件 {message-id} 提交的作业已经收到。
 
-以下为你所提交的文件的SHA256值，用于确认所提交文件的内容一致性：
+以下为您所提交的作业文件的SHA256值，用于确认所提交文件的内容一致性：
 {checksum}
 {comment}
 此邮件为提交作业成功确认函，请保留。
 
+祝学业进步！
+
 齐飞
 --------
-西安电子科技大学电子工程学院
+西安电子科技大学人工智能学院
+https://fredqi.me
 """
         exts_zip = ['.zip', '.tar.gz', '.tar', '.xz', '.7z', '.rar']
         exts = ['.c', '.cpp', '.m', '.py']
@@ -128,6 +134,7 @@ class Homework():
         - Downloaded and confirmed emails.
         """
         student_id, student_name = parse_subject(header['subject'])
+        # print(student_id, student_name)
         if self.student_id is None:
             self.student_id = student_id
         elif student_id != self.student_id:
@@ -207,8 +214,8 @@ class Homework():
         has_source = len(exts & Homework.exts_sources) > 0
         has_doc = len(exts & Homework.exts_docs) > 0
         data['comment'] = '\n'
-        if not has_source:
-            data['comment'] += u"\n！ 缺少程序代码文件。\n"
+        # if not has_source:
+        #     data['comment'] += u"\n！ 缺少程序代码文件。\n"
         if not has_doc:
             data['comment'] += u"\n！ 缺少书面报告。\n"
 
@@ -251,9 +258,9 @@ def parse_cmd():
                         required=True,
                         help='The keywords in mail subject used for search.')
     parser.add_argument('-a', '--search-since', dest='since',
-                        help='Search mails received since the given date.')
+                        help='Search mails received since the given date (Day-Mon-YEAR).')
     parser.add_argument('-b', '--search-before', dest='before',
-                        help='Search mails received before the given date.')
+                        help='Search mails received before the given date (Day-Mon-YEAR).')
     parser.add_argument('-t', '--test-mode', dest='test',
                         action='store_true', default=False,
                         help='Analyze the header for the purpose of testing.')
@@ -307,7 +314,10 @@ def check_homeworks(download=True):
         logtxt = " ".join(["Processing", header['subject'],
                            "from", header['from']])
         print(logtxt)
+        logfile.writelines(logtxt + '\n')
         student_id, _ = parse_subject(header['subject'])
+        if student_id is None:
+            continue
         if student_id not in mgr.homeworks:
             if header['from'] != Homework.email_teacher:
                 mgr.homeworks[student_id] = Homework(euid, header)
@@ -333,10 +343,11 @@ def check_homeworks(download=True):
             #       hw.student_id, type(hw.student_id))
             hw.save(body, attachments)
             hw.display()
-            if not (test_mode or hw.is_confirmed()):
+            if not hw.is_confirmed():
                 to_addr, msg = hw.create_confirmation()
-                # print(to_addr)
-                mh.send_email(Homework.email_teacher, to_addr, msg)
+                # print(to_addr)                
+                if not test_mode:
+                    mh.send_email(Homework.email_teacher, to_addr, msg)
 
     mh.quit()
 

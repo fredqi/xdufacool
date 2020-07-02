@@ -36,7 +36,7 @@ class MailHelper:
         if 'OK' != typ:
             print(typ, data)
 
-        print(len(data), type(data), type(data[0]))
+        # print(len(data), type(data), type(data[0]))
         items = [str(dt, 'utf-8') for dt in data[0].split()]
         logtxt = u'%d mails to be processed.' % len(items)
         print(logtxt)
@@ -105,6 +105,8 @@ class MailHelper:
                     encfmt = part.get_param('charset')
                     # if 'UTF-8' != encfmt:
                     # text = unicode(text, encfmt).encode('utf-8')
+                    if encfmt.upper() in ['GB2312', 'GBK']:
+                        encfmt = 'GB18030'
                     text = text.decode(encfmt)
                     body += '\n' + text
 
