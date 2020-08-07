@@ -8,8 +8,8 @@
 # ----------------------------------------------------------------------
 # ## CHANGE LOG
 # ----------------------------------------------------------------------
-# Last-Updated: 2020-07-02 13:37:54(+0800) [by Fred Qi]
-#     Update #: 1623
+# Last-Updated: 2020-08-07 10:26:26(+0800) [by Fred Qi]
+#     Update #: 1627
 # ----------------------------------------------------------------------
 from __future__ import print_function
 
@@ -53,11 +53,13 @@ def parse_subject(subject):
         parse_subject.year = re.compile(r'(?P<year>2020)')
     student_id, name = None, None
     m = parse_subject.re_id.search(subject)
-    my = parse_subject.year.search(subject)
-    if m is not None and my is not None:
+    if m is not None:
         student_id = m.group('stuid')
-        if my.end('year') < m.end('stuid'):
-            name = subject[my.end('year') + 1 : m.start('stuid') - 1]
+        name = subject[m.end('stuid') + 1:]
+    # my = parse_subject.year.search(subject)
+    # if m is not None and my is not None:
+    #     if my.end('year') < m.end('stuid'):
+    #         name = subject[my.end('year') + 1 : m.start('stuid') - 1]
     return student_id, name
 
 
