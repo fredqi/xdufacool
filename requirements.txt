@@ -1,5 +1,8 @@
 tqdm
 PySocks
 PyYAML
+xlrd
+xlwt
+click
 pdf2image
 bibtexparser

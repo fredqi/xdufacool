@@ -47,6 +47,7 @@ def setup_package():
                                       ['xdufacool = xdufacool.homework_manager:check_homeworks',
                                        'pdf2pptx  = xdufacool.pdf2pptx:pdf2pptx',
                                        'syllabus  = xdufacool.syllabus:syllabus_helper',
+                                       'xduscore  = xdufacool.score_helper:xduscore',
                                        'arxort = xdufacool.organize_bib:organize_bib']},
                     # unit tests
                     test_suite="tests")
