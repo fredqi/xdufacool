@@ -4,8 +4,8 @@
 # Author: Fred Qi
 # Created: 2021-01-10 20:41:42(+0800)
 #
-# Last-Updated: 2021-01-11 00:24:11(+0800) [by Fred Qi]
-#     Update #: 249
+# Last-Updated: 2021-03-06 22:32:26(+0800) [by Fred Qi]
+#     Update #: 314
 # 
 
 # Commentary:
@@ -17,9 +17,11 @@
 #
 #
 #
+import os
 import csv
 import xlrd
 import xlwt
+import shutil
 import click
 
 
@@ -219,6 +221,42 @@ def fill(forms, score, field, **kwargs):
         sid_col, = find_column_index(score_form[0], [kwargs["sid_xdu"]])
         fill_score_form(score_form, scores_dict, sid_col)
         write_xls(score_form, xlsfile)
+
+
+@xduscore.command()
+@click.argument("classes", nargs=-1, type=click.Path(exists=True))
+@click.option("-k", "--homework", nargs=1, type=click.Path(exists=True))
+@click.option('--sid-xdu', default='学号(文本)', type=click.STRING)
+def organize(classes, homework, **kwargs):
+    """Organize homeworks donwloaded from baidu for archival."""
+    fields = [kwargs["sid_xdu"]]
+    student_classes = {}
+    for cls in classes:
+        class_name = cls.split(".")[0]
+        if not os.path.exists(class_name):
+            os.mkdir(class_name)
+        hw_path = os.path.join(class_name, homework)
+        if not os.path.exists(hw_path):
+            os.mkdir(hw_path)
+        data = load_xls(cls)
+        sid_col, = find_column_index(data[0], fields)
+        for row in data[1:]:
+            sid = row[sid_col]
+            student_classes[sid] = class_name
+
+    for path, _, files in os.walk(homework):
+        for name in files:
+            if ".pdf" == name[-4:].lower():
+                the_sid = name.split(".")[0].split("-")[-1]
+                if the_sid in student_classes:
+                    the_cls = student_classes[the_sid]
+                    hw_src = os.path.join(path, name)
+                    hw_dst = os.path.join(the_cls, homework, name)
+                    # print(f"Copying {hw_src} to {hw_dst}...")
+                    shutil.copyfile(hw_src, hw_dst)
+                else:
+                    print(f"Cannot find the class for student {the_sid}.")
+               
 
 # 
 # score_helper.py ends here
