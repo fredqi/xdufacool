@@ -1,0 +1,217 @@
+<rdf:RDF
+ xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+ xmlns:z="http://www.zotero.org/namespaces/export#"
+ xmlns:dcterms="http://purl.org/dc/terms/"
+ xmlns:dc="http://purl.org/dc/elements/1.1/"
+ xmlns:bib="http://purl.org/net/biblio#"
+ xmlns:foaf="http://xmlns.com/foaf/0.1/"
+ xmlns:link="http://purl.org/rss/1.0/modules/link/"
+ xmlns:prism="http://prismstandard.org/namespaces/1.2/basic/">
+    <bib:BookSection rdf:about="urn:isbn:978-3-319-10589-5%20978-3-319-10590-1">
+        <z:itemType>bookSection</z:itemType>
+        <dcterms:isPartOf>
+            <bib:Book>
+                <dcterms:isPartOf>
+                    <bib:Series>
+                        <dc:title>Lecture Notes in Computer Science</dc:title>
+                        <dc:identifier>8689</dc:identifier>
+                    </bib:Series>
+                </dcterms:isPartOf>
+                <dc:identifier>ISBN 978-3-319-10589-5 978-3-319-10590-1</dc:identifier>
+                <dc:title>European Conference on Computer Vision (ECCV)</dc:title>
+            </bib:Book>
+        </dcterms:isPartOf>
+        <dc:publisher>
+            <foaf:Organization>
+               <foaf:name>Springer International Publishing</foaf:name>
+            </foaf:Organization>
+        </dc:publisher>
+        <bib:authors>
+            <rdf:Seq>
+                <rdf:li>
+                    <foaf:Person>
+                        <foaf:surname>Zeiler</foaf:surname>
+                        <foaf:givenName>Matthew D.</foaf:givenName>
+                    </foaf:Person>
+                </rdf:li>
+                <rdf:li>
+                    <foaf:Person>
+                        <foaf:surname>Fergus</foaf:surname>
+                        <foaf:givenName>Rob</foaf:givenName>
+                    </foaf:Person>
+                </rdf:li>
+            </rdf:Seq>
+        </bib:authors>
+        <bib:editors>
+            <rdf:Seq>
+                <rdf:li>
+                    <foaf:Person>
+                        <foaf:surname>Fleet</foaf:surname>
+                        <foaf:givenName>David</foaf:givenName>
+                    </foaf:Person>
+                </rdf:li>
+                <rdf:li>
+                    <foaf:Person>
+                        <foaf:surname>Pajdla</foaf:surname>
+                        <foaf:givenName>Tomas</foaf:givenName>
+                    </foaf:Person>
+                </rdf:li>
+                <rdf:li>
+                    <foaf:Person>
+                        <foaf:surname>Schiele</foaf:surname>
+                        <foaf:givenName>Bernt</foaf:givenName>
+                    </foaf:Person>
+                </rdf:li>
+                <rdf:li>
+                    <foaf:Person>
+                        <foaf:surname>Tuytelaars</foaf:surname>
+                        <foaf:givenName>Tinne</foaf:givenName>
+                    </foaf:Person>
+                </rdf:li>
+            </rdf:Seq>
+        </bib:editors>
+        <link:link rdf:resource="#item_2058"/>
+        <link:link rdf:resource="#item_2059"/>
+        <dc:identifier>
+            <dcterms:URI>
+                <rdf:value>http://link.springer.com/chapter/10.1007/978-3-319-10590-1_53</rdf:value>
+            </dcterms:URI>
+        </dc:identifier>
+        <dc:rights>©2014 Springer International Publishing Switzerland</dc:rights>
+        <bib:pages>818-833</bib:pages>
+        <dc:date>2014/09/06</dc:date>
+        <dc:description>00238</dc:description>
+        <dcterms:dateSubmitted>2015-04-27 15:54:16</dcterms:dateSubmitted>
+        <z:libraryCatalog>link.springer.com</z:libraryCatalog>
+        <z:language>en</z:language>
+        <dcterms:abstract>Large Convolutional Network models have recently demonstrated impressive classification performance on the ImageNet benchmark Krizhevsky et al. [18]. However there is no clear understanding of why they perform so well, or how they might be improved. In this paper we explore both issues. We introduce a novel visualization technique that gives insight into the function of intermediate feature layers and the operation of the classifier. Used in a diagnostic role, these visualizations allow us to find model architectures that outperform Krizhevsky et al on the ImageNet classification benchmark. We also perform an ablation study to discover the performance contribution from different model layers. We show our ImageNet model generalizes well to other datasets: when the softmax classifier is retrained, it convincingly beats the current state-of-the-art results on Caltech-101 and Caltech-256 datasets.</dcterms:abstract>
+        <dc:title>Visualizing and Understanding Convolutional Networks</dc:title>
+    </bib:BookSection>
+    <z:Attachment rdf:about="#item_2058">
+        <z:itemType>attachment</z:itemType>
+        <dc:identifier>
+            <dcterms:URI>
+               <rdf:value>http://arxiv.org/abs/1311.2901v3</rdf:value>
+            </dcterms:URI>
+        </dc:identifier>
+        <dcterms:dateSubmitted>2015-04-27 15:56:21</dcterms:dateSubmitted>
+        <dc:title>[1311.2901v3] Visualizing and Understanding Convolutional Networks</dc:title>
+        <z:linkMode>3</z:linkMode>
+        <link:type>text/html</link:type>
+    </z:Attachment>
+    <z:Attachment rdf:about="#item_2059">
+        <z:itemType>attachment</z:itemType>
+        <rdf:resource rdf:resource="attachments:learning/neural-nets/Zeiler-Fergus-2014-Visualizing_and_Understanding_Convolutional_Networks.pdf"/>
+        <dc:title>Zeiler-Fergus-2014-Visualizing_and_Understanding_Convolutional_Networks.pdf</dc:title>
+        <z:linkMode>2</z:linkMode>
+        <link:type>application/pdf</link:type>
+    </z:Attachment>
+    <rdf:Description rdf:about="#item_1046">
+        <z:itemType>conferencePaper</z:itemType>
+        <dcterms:isPartOf>
+            <bib:Journal>
+                <dc:title>The IEEE Conference on Computer Vision and Pattern Recognition (CVPR)</dc:title>
+            </bib:Journal>
+        </dcterms:isPartOf>
+        <bib:authors>
+            <rdf:Seq>
+                <rdf:li>
+                    <foaf:Person>
+                        <foaf:surname>Zhou</foaf:surname>
+                        <foaf:givenName>Yin</foaf:givenName>
+                    </foaf:Person>
+                </rdf:li>
+                <rdf:li>
+                    <foaf:Person>
+                        <foaf:surname>Tuzel</foaf:surname>
+                        <foaf:givenName>Oncel</foaf:givenName>
+                    </foaf:Person>
+                </rdf:li>
+            </rdf:Seq>
+        </bib:authors>
+        <link:link rdf:resource="#item_2540"/>
+        <link:link rdf:resource="#item_2541"/>
+        <dc:date>June 2018</dc:date>
+        <dc:title>VoxelNet: End-to-End Learning for Point Cloud Based 3D Object Detection</dc:title>
+    </rdf:Description>
+    <z:Attachment rdf:about="#item_2540">
+        <z:itemType>attachment</z:itemType>
+        <rdf:resource rdf:resource="attachments:learning/neural-nets/CVPR-Zhou_Tuzel-2018-VoxelNet-supp.pdf"/>
+        <dc:title>CVPR-Zhou_Tuzel-2018-VoxelNet-supp.pdf</dc:title>
+        <z:linkMode>2</z:linkMode>
+        <link:type>application/pdf</link:type>
+    </z:Attachment>
+    <z:Attachment rdf:about="#item_2541">
+        <z:itemType>attachment</z:itemType>
+        <rdf:resource rdf:resource="attachments:learning/neural-nets/CVPR-Zhou_Tuzel-2018-VoxelNet.pdf"/>
+        <dc:title>CVPR-Zhou_Tuzel-2018-VoxelNet.pdf</dc:title>
+        <z:linkMode>2</z:linkMode>
+        <link:type>application/pdf</link:type>
+    </z:Attachment>
+    <bib:Article rdf:about="#item_57501">
+        <z:itemType>journalArticle</z:itemType>
+        <dcterms:isPartOf rdf:resource="urn:issn:1939-3539"/>
+        <bib:authors>
+            <rdf:Seq>
+                <rdf:li>
+                    <foaf:Person>
+                        <foaf:surname>Gao</foaf:surname>
+                        <foaf:givenName>Shang-Hua</foaf:givenName>
+                    </foaf:Person>
+                </rdf:li>
+                <rdf:li>
+                    <foaf:Person>
+                        <foaf:surname>Cheng</foaf:surname>
+                        <foaf:givenName>Ming-Ming</foaf:givenName>
+                    </foaf:Person>
+                </rdf:li>
+                <rdf:li>
+                    <foaf:Person>
+                        <foaf:surname>Zhao</foaf:surname>
+                        <foaf:givenName>Kai</foaf:givenName>
+                    </foaf:Person>
+                </rdf:li>
+                <rdf:li>
+                    <foaf:Person>
+                        <foaf:surname>Zhang</foaf:surname>
+                        <foaf:givenName>Xin-Yu</foaf:givenName>
+                    </foaf:Person>
+                </rdf:li>
+                <rdf:li>
+                    <foaf:Person>
+                        <foaf:surname>Yang</foaf:surname>
+                        <foaf:givenName>Ming-Hsuan</foaf:givenName>
+                    </foaf:Person>
+                </rdf:li>
+                <rdf:li>
+                    <foaf:Person>
+                        <foaf:surname>Torr</foaf:surname>
+                        <foaf:givenName>Philip</foaf:givenName>
+                    </foaf:Person>
+                </rdf:li>
+            </rdf:Seq>
+        </bib:authors>
+        <link:link rdf:resource="#item_57506"/>
+        <bib:pages>652-662</bib:pages>
+        <dc:date>2021-02</dc:date>
+        <dc:description>Conference Name: IEEE Transactions on Pattern Analysis and Machine Intelligence</dc:description>
+        <z:libraryCatalog>IEEE Xplore</z:libraryCatalog>
+        <dcterms:abstract>Representing features at multiple scales is of great importance for numerous vision tasks. Recent advances in backbone convolutional neural networks (CNNs) continually demonstrate stronger multi-scale representation ability, leading to consistent performance gains on a wide range of applications. However, most existing methods represent the multi-scale features in a layer-wise manner. In this paper, we propose a novel building block for CNNs, namely Res2Net, by constructing hierarchical residual-like connections within one single residual block. The Res2Net represents multi-scale features at a granular level and increases the range of receptive fields for each network layer. The proposed Res2Net block can be plugged into the state-of-the-art backbone CNN models, e.g., ResNet, ResNeXt, and DLA. We evaluate the Res2Net block on all these models and demonstrate consistent performance gains over baseline models on widely-used datasets, e.g., CIFAR-100 and ImageNet. Further ablation studies and experimental results on representative computer vision tasks, i.e., object detection, class activation mapping, and salient object detection, further verify the superiority of the Res2Net over the state-of-the-art baseline methods. The source code and trained models are available on https://mmcheng.net/res2net/.</dcterms:abstract>
+        <dc:title>Res2Net: A New Multi-Scale Backbone Architecture</dc:title>
+        <z:shortTitle>Res2Net</z:shortTitle>
+    </bib:Article>
+    <bib:Journal rdf:about="urn:issn:1939-3539">
+        <prism:volume>43</prism:volume>
+        <prism:number>2</prism:number>
+        <dc:title>IEEE Transactions on Pattern Analysis and Machine Intelligence</dc:title>
+        <dc:identifier>ISSN 1939-3539</dc:identifier>
+        <dc:identifier>DOI 10.1109/TPAMI.2019.2938758</dc:identifier>
+    </bib:Journal>
+    <z:Attachment rdf:about="#item_57506">
+        <z:itemType>attachment</z:itemType>
+        <rdf:resource rdf:resource="attachments:learning/neural-nets/TPAMI-Gao_et_al-2021-Res2Net.pdf"/>
+        <dc:title>TPAMI-Gao_et_al-2021-Res2Net.pdf</dc:title>
+        <z:linkMode>2</z:linkMode>
+        <link:type>application/pdf</link:type>
+    </z:Attachment>
+</rdf:RDF>

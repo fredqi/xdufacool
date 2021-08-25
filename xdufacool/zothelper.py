@@ -5,8 +5,8 @@
 # Author: Fred Qi
 # Created: 2021-08-11 17:29:25(+0800)
 #
-# Last-Updated: 2021-08-22 20:05:35(+0800) [by Fred Qi]
-#     Update #: 1309
+# Last-Updated: 2021-08-25 21:15:39(+0800) [by Fred Qi]
+#     Update #: 1672
 # 
 
 # Commentary:
@@ -61,6 +61,167 @@ class paperIDParser(object):
             return None
         return domain + " " + pm.group('paper_id')
 
+
+class EntryParser(object):
+    """Convert a xml tag to its abbreviation form according to namespace."""
+    
+    def __init__(self, filename):
+        tag_ns_pattern = "^\{(?P<tag_ns>[\w\-:/\.#]+)\}(?P<tag>\w+)$"
+        self.tag_parser = re.compile(tag_ns_pattern)
+        pubid_pattern = "^\s*(?P<pubid_type>doi|issn|isbn).+$"
+        self.pubid_parser = re.compile(pubid_pattern, re.I)
+        self.nsmap = EntryParser.get_xml_namespaces(filename)
+        self.insmap = dict([(v, k) for k, v in self.nsmap.items()])
+        rdf_ns = self.nsmap['rdf']
+        self.rdf_res = f"{{{rdf_ns}}}resource"
+        self.rdf_about = f"{{{rdf_ns}}}about"
+        self.dc_part = "dcterms:isPartOf"
+        self.journals = {}
+        self.journal_fields = {"journalTitle": "dc:title",
+                               "volume": "prism:volume",
+                               "number": "prism:number"}
+        self.book_fields = {"bookTitle": "dc:title",
+                            "seriesTitle": "dcterms:isPartOf/bib:Series/dc:title",
+                            "seriesNumber": "dcterms:isPartOf/bib:Series/dc:identifier"}
+        self.creators = {"authors": "bib:authors", "editors": "bib:editors"}
+        self.name_parts = {"surname": "foaf:surname",
+                           "givenName": "foaf:givenName"}
+        # self.fields = {"title": "dc:title",
+        #                "abstract": "dcterms:abstract",
+        #                "pages": "bib:pages", "date": "dc:date"}    
+        self.fields = {"dc:title": "title",
+                       "dcterms:abstract": "abstract",
+                       "bib:pages": "pages",
+                       "dc:date": "date"}
+        self.fields_creators = {"bib:authors": "authors", "bib:editors": "editors"}
+
+    @staticmethod
+    def get_xml_namespaces(filename):
+        namespaces = []
+        for _, value in ET.iterparse(filename,
+                                       events=['start-ns']):
+            namespaces.append(value)
+        return dict(namespaces)
+
+    def get_abbrev_tag(self, tag):
+        m = self.tag_parser.match(tag)
+        if m is None:
+            return None
+        tag_ns = m.group('tag_ns')
+        return self.insmap[tag_ns] + ':' + m.group('tag')
+
+    def get_xml_tag(self, elem, tag_name):
+        """Get tag text."""
+        value = None
+        tag = elem.find(tag_name, self.nsmap)
+        value = tag.text.strip()
+        return value
+
+    def parse_fields(self, elem):
+        entry = {}
+        for node in elem:
+            tag_abbrev = self.get_abbrev_tag(node.tag)
+            if tag_abbrev in self.fields:
+                key = self.fields[tag_abbrev]
+                entry[key] = node.text.strip()
+            if tag_abbrev in self.fields_creators:
+                key = self.fields_creators[tag_abbrev]
+                entry[key] = self.get_creators(node)
+        return entry
+
+    def get_creators(self, elem):
+        """Get creators of the given entry."""
+        creators = []
+        tag_person = "rdf:Seq/rdf:li/foaf:Person"
+        for elem_p in elem.iterfind(tag_person, self.nsmap):
+            person = {}
+            for key_np, tag_np in self.name_parts.items():
+                person[key_np] = elem_p.find(tag_np, self.nsmap).text
+            creators.append(person)
+        return creators                
+    
+    def get_publication_ids(self, elem, dc_id="dc:identifier"):
+        """To obtain publication IDs, such as DOI, ISSN, ISBN, etc, from a
+        given element.
+
+        """
+        ids = {}
+        id_texts = [x.text for x in elem.iterfind(dc_id, self.nsmap)]
+        for id_text in id_texts:
+            m = self.pubid_parser.match(id_text) 
+            if m:
+                key = m.group("pubid_type").lower()
+                ids[key] = id_text
+        return ids
+        
+    def get_journal(self, elem):
+        """Collect information of all journals."""
+        journal = self.get_publication_ids(elem)
+        for key, tag in self.journal_fields.items():
+            journal[key] = self.get_xml_tag(elem, tag)
+        return journal
+
+    def get_book(self, elem):
+        book = self.get_publication_ids(elem)
+        for key, tag in self.book_fields.items():
+            book[key] = self.get_xml_tag(elem, tag)
+        return book
+
+    def collect_journals(self, rdf_root):
+        """Collect all journals in the given RDF file."""
+        for elem in rdf_root.iterfind("bib:Journal", self.nsmap):
+            jnl_ref = elem.get(self.rdf_about)
+            journal = self.get_journal(elem)
+            self.journals[jnl_ref] = journal            
+       
+    def get_entry(self, elem):
+        entry = self.parse_fields(elem)
+        tag_abbrev = self.get_abbrev_tag(elem.tag)
+        if "bib:Article" == tag_abbrev:
+            jref = elem.find(self.dc_part, self.nsmap)
+            if jref is not None:
+                jref_id = jref.get(self.rdf_res)
+                entry.update(self.journals[jref_id])
+                # entry["journal"] = self.journals[jref_id]
+
+        if "bib:BookSection" == tag_abbrev:
+            book_node = elem.find("dcterms:isPartOf/bib:Book", self.nsmap)
+            if book_node:
+                entry.update(self.get_book(book_node))
+
+        if "rdf:Description" == tag_abbrev:
+            pass
+        
+        # print(entry)
+        return entry
+
+
+class ZoteroRDFParser(object):
+    """To parse a zotero xml RDF file."""
+
+    def __init__(self):
+        self._tree = None
+        self._root = None
+        self.tag_abbrev = None
+        self.articles = {}
+        self.attachments = {}
+        self.entries = []
+
+    def load(self, filename):
+        self._tree = ET.parse(filename)
+        self._root = self._tree.getroot()
+        self.tag_abbrev = EntryParser(filename)
+        
+        n_item = 0
+        for item in self._root:
+            type_node = item.find("z:itemType", self.tag_abbrev.nsmap)
+            n_item += 1
+
+        return self._tree
+
+    def save(filename):
+        pass
+        
 
 def merge_duplicate_collections(root, ns):
     """
@@ -164,29 +325,6 @@ def remove_linked_attachments(root, atts, ns):
         # print("DEL:", att.get(rdf_about))
         root.remove(att)
 
-
-def get_jpaper_doi(elem, dc_id="dc:identifier",
-                   ns={"dc": "http://purl.org/dc/elements/1.1/",
-                       "bib": "http://purl.org/net/biblio#"}):
-    """From an elem to obtain paper DOI."""
-    ids = [x.text for x in elem.iterfind(dc_id, ns)]
-    doi = next((x for x in ids if x.find("DOI") >= 0), None)
-    return doi
-        
-
-def collect_journals(root, ns):
-    """To update all journal information."""
-    rdf_about = f"{{{ns['rdf']}}}about"
-    dc_id = f"{{{ns['dc']}}}identifier"
-    
-    doi_map = {}
-    for jnl in root.iterfind("bib:Journal", ns):
-        doi = get_jpaper_doi(jnl)
-        if doi:
-            jnl_ref = jnl.get(rdf_about)
-            doi_map[jnl_ref] = doi
-    return doi_map
-       
 
 def collect_rdf_identifiers(root, ns):
     """Collect DOIs, ISBNs, or URLs from a Zotero RDF XML file."""

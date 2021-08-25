@@ -4,8 +4,8 @@
 # Author: Fred Qi
 # Created: 2021-08-22 18:32:58(+0800)
 #
-# Last-Updated: 2021-08-22 19:23:10(+0800) [by Fred Qi]
-#     Update #: 71
+# Last-Updated: 2021-08-25 21:08:34(+0800) [by Fred Qi]
+#     Update #: 227
 # 
 
 # Commentary:
@@ -18,8 +18,16 @@
 #
 #
 
+from pathlib import Path
 from unittest import TestCase
+from xml.etree import ElementTree as ET
 from xdufacool.zothelper import paperIDParser
+from xdufacool.zothelper import EntryParser
+from xdufacool.zothelper import ZoteroRDFParser
+
+
+DATA_PATH = Path(__file__).resolve().parent
+RDF_FILEPATH = DATA_PATH.joinpath("data", "zotero.rdf")
 
 
 class TestPaperIdParser(TestCase):
@@ -132,8 +140,122 @@ class TestPaperIdParser(TestCase):
             self.assertEqual(paper_id, paper_id_ret,
                              msg=f"Erorr parsing DOI-based URL {url}")
 
-        
 
+
+class TestEntryParser(TestCase):
+
+    def setUp(self):
+        self.entry_parser = EntryParser(RDF_FILEPATH)
+        self.root = ET.parse(RDF_FILEPATH).getroot()
+    
+    def test_namespace(self):
+        ns = {'rdf': "http://www.w3.org/1999/02/22-rdf-syntax-ns#",
+              'z': "http://www.zotero.org/namespaces/export#",
+              'dc': "http://purl.org/dc/elements/1.1/",
+              'vcard': "http://nwalsh.com/rdf/vCard#",
+              'foaf': "http://xmlns.com/foaf/0.1/",
+              'bib': "http://purl.org/net/biblio#",
+              'link': "http://purl.org/rss/1.0/modules/link/",
+              'dcterms': "http://purl.org/dc/terms/",
+              'prism': "http://prismstandard.org/namespaces/1.2/basic/"}
+
+        nsmap = EntryParser.get_xml_namespaces(RDF_FILEPATH)
+
+        for key, value in nsmap.items():
+            self.assertIn(key, ns,
+                          msg=f"Namespace {key} is not found.")
+            self.assertEqual(value, nsmap[key],
+                             msg=f"Namespace URL is not equal to {value}.")
+
+    def test_abbrev_tag(self):
+        tags = ["{http://www.w3.org/1999/02/22-rdf-syntax-ns#}Description",
+                "{http://purl.org/net/biblio#}BookSection",
+                "{http://purl.org/net/biblio#}Journal",
+                "{http://purl.org/net/biblio#}Article",
+                "{http://www.zotero.org/namespaces/export#}Attachment"]
+        tag_refs = ["rdf:Description",
+                    "bib:BookSection", "bib:Journal", "bib:Article",
+                    "z:Attachment"]
+
+        for tag, tag_ref in zip(tags, tag_refs):
+            tag_abbrev = self.entry_parser.get_abbrev_tag(tag)
+            self.assertEqual(tag_ref, tag_abbrev,
+                             msg=f"Abbrevation of {tag} is incorrect.")
+
+    def test_get_journal_paper(self):
+        entry_ref = {"title": "Res2Net: A New Multi-Scale Backbone Architecture",
+                     "date": "2021-02", "pages": "652-662"}
+        self.entry_parser.collect_journals(self.root)
+        node = self.root.find("bib:Article", self.entry_parser.nsmap)
+        entry = self.entry_parser.get_entry(node)
+        for key, value in entry_ref.items():
+            self.assertIn(key, entry, msg=f"Field {key} has not been extracted.")
+            self.assertEqual(value, entry[key], msg=f"Field {key} is incorrect.")
+
+    def test_get_booksection(self):
+        entry_ref = {"title": "Visualizing and Understanding Convolutional Networks",
+                     "date": "2014/09/06", "pages": "818-833"}
+        node = self.root.find("bib:BookSection", self.entry_parser.nsmap)
+        entry = self.entry_parser.get_entry(node)
+        for key, value in entry_ref.items():
+            self.assertIn(key, entry, msg=f"Field {key} has not been extracted.")
+            self.assertEqual(value, entry[key], msg=f"Field {key} is incorrect.")
+
+    def test_get_rdfdesc(self):
+        entry_ref = {"title": "VoxelNet: End-to-End Learning for Point Cloud Based 3D Object Detection",
+                     "date": "June 2018"}
+        node = self.root.find("rdf:Description", self.entry_parser.nsmap)
+        entry = self.entry_parser.get_entry(node)
+        for key, value in entry_ref.items():
+            self.assertIn(key, entry, msg=f"Field {key} has not been extracted.")
+            self.assertEqual(value, entry[key], msg=f"Field {key} is incorrect.")
+
+    def test_get_journal(self):
+        jnl = self.root.find("bib:Journal", self.entry_parser.nsmap)
+        journal = self.entry_parser.get_journal(jnl)
+        journal_ref = {"journalTitle": "IEEE Transactions on Pattern Analysis and Machine Intelligence",
+                       "volume": "43", "number": "2",
+                       "issn": "ISSN 1939-3539",
+                       "doi": "DOI 10.1109/TPAMI.2019.2938758"}
+        for key, value in journal_ref.items():
+            self.assertIn(key, journal, msg=f"{key} has not been extracted.")
+            self.assertEqual(journal[key], value, msg=f"{key} is incorrect.")
+
+        jnl = self.root.find("rdf:Description/dcterms:isPartOf/bib:Journal", self.entry_parser.nsmap)
+        title = self.entry_parser.get_xml_tag(jnl, "dc:title")
+        self.assertEqual("The IEEE Conference on Computer Vision and Pattern Recognition (CVPR)",
+                         title, msg="Title is incorrect")
+
+    def test_collect_journals(self):
+        self.entry_parser.collect_journals(self.root)
+        jnls = self.entry_parser.journals
+        self.assertEqual(len(jnls), 1, msg="Number of jounals is incorrect.")
+
+    def test_get_creators(self):
+        node = self.root.find("bib:Article/bib:authors", self.entry_parser.nsmap)
+        authors = self.entry_parser.get_creators(node)
+        # self.assertTrue(creators['editors'] == [], msg="There should be no editors.")
+        self.assertEqual(len(authors), 6, msg="There are 6 authors.")
+
+        author = authors[0]
+        au_ref = {"surname": "Gao", "givenName": "Shang-Hua"}
+        self.assertEqual(author, au_ref,
+                         msg=f"The first author is {au_ref['givenName']} {au_ref['surname']}")
+
+        author = authors[-1]
+        au_ref = {"surname": "Torr", "givenName": "Philip"}
+        self.assertEqual(author, au_ref,
+                         msg=f"The last author is {au_ref['givenName']} {au_ref['surname']}")
+            
+
+class TestZoteroParser(TestCase):
+
+    def setUp(self):
+        self.rdf_parser = ZoteroRDFParser()
+
+    def test_iteritem(self):
+        ret = self.rdf_parser.load(RDF_FILEPATH)
+        self.assertIsNotNone(ret, msg=f"Error loading {RDF_FILEPATH}.")
 
 # 
 # test_zothelper.py ends here
