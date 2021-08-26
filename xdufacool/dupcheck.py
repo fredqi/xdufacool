@@ -76,8 +76,18 @@ def get_file_size(filename):
     return str(os.stat(filename).st_size)
 
 
-def filter_dupdict(hashdict):
-    return dict(filter(lambda x: len(x[1]) > 1, hashdict.items()))
+def filter_dupdict(hashdict, base_dir=None):
+    dict_filtered = dict(filter(lambda x: len(x[1]) > 1, hashdict.items()))
+    if base_dir is not None and Path(base_dir).exists():
+        keys_to_ignore = []
+        for key, files in dict_filtered.items():
+            dup_files = [item['filename'] for item in files]
+            to_keep = any(map(lambda x: is_child_path(x, base_dir), dup_files))
+            if not to_keep:
+                keys_to_ignore.append(key)
+        for key in keys_to_ignore:
+            del dict_filtered[key]
+    return dict_filtered
 
 
 def dupdict_to_list(dup_files):
@@ -105,14 +115,14 @@ def dupdict_to_yaml(yamlfile, dup_simplified):
                   Dumper=Dumper, allow_unicode=True)
 
 
-def check_parent_path(filepath, parent):
+def is_child_path(filepath, parent):
     p, thefile = Path(parent), Path(filepath)
     return p in thefile.parents and thefile.is_file()
 
 
-def remove_dupfile(duplications, basedir):
+def remove_dupfile(duplications, base_dir):
     for _, files in duplications.items():
-        indicators = list(map(lambda x: check_parent_path(x, basedir), files))
+        indicators = list(map(lambda x: is_child_path(x, base_dir), files))
         has_a_copy = any(indicators)
         if not has_a_copy:
             continue
@@ -147,6 +157,16 @@ class FileList(object):
         unit = ' M' if propertyName in algos else ' files'
         return tqdm(total=total_steps, unit=unit)
 
+    def filter_files(self, base_dir):
+        keys_to_ignore = []
+        for key, values in self.files.items():
+            dup_files = [item['filename'] for item in values]
+            to_keep = any(map(lambda x: is_child_path(x, base_dir), dup_files))
+            if not to_keep:
+                keys_to_ignore.append(key)
+        for key in keys_to_ignore:
+            del self.files[key]
+
     def collect_property(self, propertyName):
         thefunc = self.propertyFunctions[propertyName]
         pbar = self.calc_progress(propertyName)
@@ -154,7 +174,7 @@ class FileList(object):
             thefile[propertyName] = thefunc(thefile['filename'])
             pbar.update(thefile['step'])
 
-    def find_duplication(self, propertyName):
+    def find_duplication(self, propertyName, base_dir=None):
         dup_files = {}
         for thefile in self.files:
             key = thefile[propertyName]
@@ -162,7 +182,7 @@ class FileList(object):
                 dup_files[key].append(thefile)
             else:
                 dup_files[key] = [thefile]
-        self.duplications = filter_dupdict(dup_files)
+        self.duplications = filter_dupdict(dup_files, base_dir)
         self.files = dupdict_to_list(self.duplications)
 
 
@@ -199,7 +219,8 @@ def remove_dup_files():
     filelist = FileList(files)
     for prop in ['size', 'sha256-partial', 'sha256']:
         filelist.collect_property(prop)
-        filelist.find_duplication(prop)
+        base_dir = args.base_dir if prop == 'size' else None
+        filelist.find_duplication(prop, base_dir)
     dup_simplified = simplify_dupdict(filelist.duplications)
     if args.dup_log:
         dupdict_to_yaml(args.dup_log, dup_simplified)

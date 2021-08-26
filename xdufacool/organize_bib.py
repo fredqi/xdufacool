@@ -4,8 +4,8 @@
 # Author: Fred Qi
 # Created: 2020-03-26 00:45:19(+0800)
 #
-# Last-Updated: 2020-04-02 18:22:58(+0800) [by Fred Qi]
-#     Update #: 476
+# Last-Updated: 2020-04-05 17:15:10(+0800) [by Fred Qi]
+#     Update #: 477
 # 
 
 # Commentary:
@@ -34,10 +34,9 @@ from bibtexparser.bibdatabase import BibDatabase
 
 
 def load_bibtex(filename):
-    parser = BibTexParser()
-    parser.ignore_nonstandard_types = False
-    parser.homogenize_fields = False
-    parser.common_strings = True
+    parser = BibTexParser(ignore_nonstandard_types=False,
+                          homogenize_fields=False,
+                          common_strings=True)
 
     with open(filename) as bibfile:
         bib_database = bibtexparser.load(bibfile, parser)

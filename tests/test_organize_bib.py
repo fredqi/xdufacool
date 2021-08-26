@@ -20,7 +20,8 @@ class TestBibExtraction(TestCase):
         self.assertEqual(6, len(bib_db.entries),
                          "Count of BibTeX entries are NOT equal.")
         bib_ieee = load_bibtex(self.ieee_bibfile)
-        self.assertEqual(263, len(bib_ieee.strings),
+        # Twelve entries for months
+        self.assertEqual(263, len(bib_ieee.strings) - 12,
                          "Number of BibTeX string are NOT equal.")
 
     def test_parse_ieee_strings(self):
