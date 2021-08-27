@@ -7,6 +7,82 @@
  xmlns:foaf="http://xmlns.com/foaf/0.1/"
  xmlns:link="http://purl.org/rss/1.0/modules/link/"
  xmlns:prism="http://prismstandard.org/namespaces/1.2/basic/">
+    <bib:Document rdf:about="https://github.com/Labelbox/Labelbox">
+        <z:itemType>webpage</z:itemType>
+        <dcterms:isPartOf>
+           <z:Website></z:Website>
+        </dcterms:isPartOf>
+        <dc:subject>zothelper</dc:subject>
+        <dc:identifier>
+            <dcterms:URI>
+               <rdf:value>https://github.com/Labelbox/Labelbox</rdf:value>
+            </dcterms:URI>
+        </dc:identifier>
+        <dc:rights>Apache-2.0</dc:rights>
+        <dc:date>2019-03-31T01:10:29Z</dc:date>
+        <dc:description>original-date: 2018-01-07T06:26:16Z</dc:description>
+        <dcterms:dateSubmitted>2019-03-31 12:43:55</dcterms:dateSubmitted>
+        <dc:title>Labelbox</dc:title>
+        <z:shortTitle>Labelbox is the fastest way to annotate data to build and ship computer vision applications.</z:shortTitle>
+    </bib:Document>
+    <bib:Report rdf:about="#item_108">
+        <z:itemType>report</z:itemType>
+        <dc:publisher>
+            <foaf:Organization>
+               <foaf:name>California Institute of Technology</foaf:name>
+            </foaf:Organization>
+        </dc:publisher>
+        <bib:authors>
+            <rdf:Seq>
+                <rdf:li>
+                    <foaf:Person>
+                        <foaf:surname>Griffin</foaf:surname>
+                        <foaf:givenName>Gregory</foaf:givenName>
+                    </foaf:Person>
+                </rdf:li>
+                <rdf:li>
+                    <foaf:Person>
+                        <foaf:surname>Holub</foaf:surname>
+                        <foaf:givenName>Alex</foaf:givenName>
+                    </foaf:Person>
+                </rdf:li>
+                <rdf:li>
+                    <foaf:Person>
+                        <foaf:surname>Perona</foaf:surname>
+                        <foaf:givenName>Pietro</foaf:givenName>
+                    </foaf:Person>
+                </rdf:li>
+            </rdf:Seq>
+        </bib:authors>
+        <link:link rdf:resource="#item_2048"/>
+        <link:link rdf:resource="#item_2049"/>
+        <dc:subject>zothelper</dc:subject>
+        <dc:date>19 Apr 2007</dc:date>
+        <dc:description>00000</dc:description>
+        <z:type>Technical Report</z:type>
+        <dcterms:abstract>We introduce a challenging set of 256 object categories containing a total of 30607 images. The original Caltech-101 [1] was collected by choosing a set of object categories, downloading examples from Google Images and then manually screening out all images that did not fit the category. Caltech-256 is collected in a similar manner with several improvements: a) the number of categories is more than doubled, b) the minimum number of images in any category is increased from 31 to 80, c) artifacts due to image rotation are avoided and d) a new and larger clutter category is introduced for testing background rejection. We suggest several testing paradigms to measure classification performance, then benchmark the dataset using two simple metrics as well as a state-of-the-art spatial pyramid matching [2] algorithm. Finally we use the clutter category to train an interest detector which rejects uninformative background regions.</dcterms:abstract>
+        <prism:number>CNS-TR-2007-001</prism:number>
+        <dc:title>Caltech-256 Object Category Dataset</dc:title>
+    </bib:Report>
+    <z:Attachment rdf:about="#item_2048">
+        <z:itemType>attachment</z:itemType>
+        <dc:identifier>
+            <dcterms:URI>
+                <rdf:value>http://www.vision.caltech.edu/Image_Datasets/Caltech256/</rdf:value>
+            </dcterms:URI>
+        </dc:identifier>
+        <dcterms:dateSubmitted>2015-04-28 10:06:32</dcterms:dateSubmitted>
+        <dc:title>Caltech256</dc:title>
+        <z:linkMode>3</z:linkMode>
+        <link:type>text/html</link:type>
+    </z:Attachment>
+    <z:Attachment rdf:about="#item_2049">
+        <z:itemType>attachment</z:itemType>
+        <rdf:resource rdf:resource="attachments:general/datasets/Griffin_et_al-2007-Caltech-256_Object_Category_Dataset.pdf"/>
+        <dc:title>Griffin_et_al-2007-Caltech-256_Object_Category_Dataset.pdf</dc:title>
+        <z:linkMode>2</z:linkMode>
+        <link:type>application/pdf</link:type>
+    </z:Attachment>
     <bib:BookSection rdf:about="urn:isbn:978-3-319-10589-5%20978-3-319-10590-1">
         <z:itemType>bookSection</z:itemType>
         <dcterms:isPartOf>
@@ -72,6 +148,7 @@
         </bib:editors>
         <link:link rdf:resource="#item_2058"/>
         <link:link rdf:resource="#item_2059"/>
+        <dc:subject>zothelper</dc:subject>
         <dc:identifier>
             <dcterms:URI>
                 <rdf:value>http://link.springer.com/chapter/10.1007/978-3-319-10590-1_53</rdf:value>
@@ -131,6 +208,7 @@
         </bib:authors>
         <link:link rdf:resource="#item_2540"/>
         <link:link rdf:resource="#item_2541"/>
+        <dc:subject>zothelper</dc:subject>
         <dc:date>June 2018</dc:date>
         <dc:title>VoxelNet: End-to-End Learning for Point Cloud Based 3D Object Detection</dc:title>
     </rdf:Description>
@@ -145,6 +223,209 @@
         <z:itemType>attachment</z:itemType>
         <rdf:resource rdf:resource="attachments:learning/neural-nets/CVPR-Zhou_Tuzel-2018-VoxelNet.pdf"/>
         <dc:title>CVPR-Zhou_Tuzel-2018-VoxelNet.pdf</dc:title>
+        <z:linkMode>2</z:linkMode>
+        <link:type>application/pdf</link:type>
+    </z:Attachment>
+    <bib:Book rdf:about="urn:isbn:978-3-319-58487-4">
+        <z:itemType>book</z:itemType>
+        <dcterms:isPartOf>
+            <bib:Series>
+               <dc:title>Undergraduate Topics in Computer Science</dc:title>
+            </bib:Series>
+        </dcterms:isPartOf>
+        <dc:publisher>
+            <foaf:Organization>
+               <foaf:name>Springer International Publishing</foaf:name>
+            </foaf:Organization>
+        </dc:publisher>
+        <bib:authors>
+            <rdf:Seq>
+                <rdf:li>
+                    <foaf:Person>
+                        <foaf:surname>Ertel</foaf:surname>
+                        <foaf:givenName>Wolfgang</foaf:givenName>
+                    </foaf:Person>
+                </rdf:li>
+            </rdf:Seq>
+        </bib:authors>
+        <z:seriesEditors>
+            <rdf:Seq>
+                <rdf:li>
+                    <foaf:Person>
+                        <foaf:surname>Mackie</foaf:surname>
+                        <foaf:givenName>Ian</foaf:givenName>
+                    </foaf:Person>
+                </rdf:li>
+            </rdf:Seq>
+        </z:seriesEditors>
+        <link:link rdf:resource="#item_2753"/>
+        <dc:subject>artificial Intelligence</dc:subject>
+        <dc:subject>learning</dc:subject>
+        <dc:subject>zothelper</dc:subject>
+        <dc:identifier>
+            <dcterms:URI>
+                <rdf:value>https://www.springer.com/cn/book/9783319584867</rdf:value>
+            </dcterms:URI>
+        </dc:identifier>
+        <prism:edition>2</prism:edition>
+        <dc:identifier>ISBN 978-3-319-58487-4</dc:identifier>
+        <dc:date>2017</dc:date>
+        <dc:description>doi: 10.1007/978-3-319-58487-4</dc:description>
+        <dcterms:abstract>This accessible and engaging textbook presents a concise introduction to the exciting field of artificial intelligence (AI). The broad-ranging discussion covers the key subdisciplines within the field, describing practical algorithms and concrete applications in the areas of agents, logic, search, reasoning under uncertainty, machine learning, neural networks, and reinforcement learning. Fully revised and updated, this much-anticipated second edition also includes new material on deep learning.
+
+Topics and features: presents an application-focused and hands-on approach to learning, with supplementary teaching resources provided at an associated website; contains numerous study exercises and solutions, highlighted examples, definitions, theorems, and illustrative cartoons; includes chapters on predicate logic, PROLOG, heuristic search, probabilistic reasoning, machine learning and data mining, neural networks and reinforcement learning; reports on developments in deep learning, including applications of neural networks to generate creative content such as text, music and art (NEW); examines performance evaluation of clustering algorithms, and presents two practical examples explaining Bayes’ theorem and its relevance in everyday life (NEW); discusses search algorithms, analyzing the cycle check, explaining route planning for car navigation systems, and introducing Monte Carlo Tree Search (NEW); includes a section in the introduction on AI and society, discussing the implications of AI on topics such as employment and transportation (NEW).
+Ideal for foundation courses or modules on AI, this easy-to-read textbook offers an excellent overview of the field for students of computer science and other technical disciplines, requiring no more than a high-school level of knowledge of mathematics to understand the material.</dcterms:abstract>
+        <dc:title>Introduction to Artificial Intelligence</dc:title>
+        <z:numPages>XIV, 356</z:numPages>
+    </bib:Book>
+    <z:Attachment rdf:about="#item_2753">
+        <z:itemType>attachment</z:itemType>
+        <rdf:resource rdf:resource="attachments:general/books/Ertel-2017-Introduction_to_Artificial_Intelligence.pdf"/>
+        <dc:title>Ertel-2017-Introduction_to_Artificial_Intelligence.pdf</dc:title>
+        <z:linkMode>2</z:linkMode>
+        <link:type>application/pdf</link:type>
+    </z:Attachment>
+    <bib:Patent rdf:about="#item_25215">
+        <z:itemType>patent</z:itemType>
+        <z:inventors>
+            <rdf:Seq>
+                <rdf:li>
+                   <foaf:Person><foaf:surname>齐飞</foaf:surname></foaf:Person>
+                </rdf:li>
+                <rdf:li>
+                   <foaf:Person><foaf:surname>夏辰</foaf:surname></foaf:Person>
+                </rdf:li>
+                <rdf:li>
+                   <foaf:Person><foaf:surname>沈冲</foaf:surname></foaf:Person>
+                </rdf:li>
+                <rdf:li>
+                   <foaf:Person><foaf:surname>石光明</foaf:surname></foaf:Person>
+                </rdf:li>
+                <rdf:li>
+                   <foaf:Person><foaf:surname>黄原成</foaf:surname></foaf:Person>
+                </rdf:li>
+                <rdf:li>
+                   <foaf:Person><foaf:surname>李甫</foaf:surname></foaf:Person>
+                </rdf:li>
+                <rdf:li>
+                   <foaf:Person><foaf:surname>张犁</foaf:surname></foaf:Person>
+                </rdf:li>
+            </rdf:Seq>
+        </z:inventors>
+        <link:link rdf:resource="#item_25218"/>
+        <dc:subject>saliency</dc:subject>
+        <dc:subject>NSFC</dc:subject>
+        <dc:subject>zothelper</dc:subject>
+        <dc:description>Citation Key: qi_saliency-ae_2018:cn</dc:description>
+        <prism:number>ZL-201510493345.X</prism:number>
+        <dc:date>2018.04.17</dc:date>
+        <dcterms:abstract>本发明公开了一种基于深层自动编码器重构的图像视觉显著性区域检测方法，主要解决现有的图像显著性检测方法缺少全局信息整合以及依赖标记数据的问题。其技术方案是：先对图像全局信息进行采样，得到多组中心‑外围图像区域组成的训练样本集；再利用这一集合来训练一个由外围区域到中心区域的基于自动编码器的深层重构网络；接着，利用学习得到的网络对图像每个像素点进行由外围区域重构中心区域的误差计算；最后，结合中心先验值估计每个像素点的显著性值。本发明能得到与人类视觉系统关注区域一致的显著性检测结果，可用于图像压缩以及图像目标检测与识别领域。</dcterms:abstract>
+        <z:applicationNumber>CN201510493345.X</z:applicationNumber>
+        <dc:title>基于深层自动编码器重构的图像视觉显著性区域检测方法</dc:title>
+        <z:filingDate>2015.08.12</z:filingDate>
+    </bib:Patent>
+    <z:Attachment rdf:about="#item_25218">
+        <z:itemType>attachment</z:itemType>
+        <rdf:resource rdf:resource="attachments:general/patents/基于深层自动编码器重构的图像视觉显著性区域检测方法.pdf"/>
+        <dc:title>基于深层自动编码器重构的图像视觉显著性区域检测方法.pdf</dc:title>
+        <z:linkMode>2</z:linkMode>
+        <link:type>application/pdf</link:type>
+    </z:Attachment>
+    <bib:Thesis rdf:about="https://kns.cnki.net/KCMS/detail/detail.aspx?dbcode=CMFD&amp;dbname=CMFD201801&amp;filename=1017299097.nh&amp;uid=WEEvREcwSlJHSldRa1FhdkJtNEYweFRyUGJWRG5rbUcybGd4WUt0RGVuYz0=$9A4hF_YAuvQ5obgVAqNKPCYcEjKensW4ggI8Fm4gTkoUKaID8j8gFw!!&amp;v=MDgxMTZQSVI4ZVgxTHV4WVM3RGgxVDNxVHJXTTFGckNVUjdxZlkrWnRGQ3JsVmI3UFZGMjZHYkd4RjlIRnFKRWI=">
+        <z:itemType>thesis</z:itemType>
+        <dc:publisher>
+           <foaf:Organization><foaf:name>西安电子科技大学</foaf:name></foaf:Organization>
+        </dc:publisher>
+        <bib:authors>
+            <rdf:Seq>
+                <rdf:li>
+                   <foaf:Person><foaf:surname>刘薇</foaf:surname></foaf:Person>
+                </rdf:li>
+            </rdf:Seq>
+        </bib:authors>
+        <link:link rdf:resource="#item_25770"/>
+        <dc:subject>zothelper</dc:subject>
+        <dc:identifier>
+            <dcterms:URI>
+                <rdf:value>https://kns.cnki.net/KCMS/detail/detail.aspx?dbcode=CMFD&amp;dbname=CMFD201801&amp;filename=1017299097.nh&amp;uid=WEEvREcwSlJHSldRa1FhdkJtNEYweFRyUGJWRG5rbUcybGd4WUt0RGVuYz0=$9A4hF_YAuvQ5obgVAqNKPCYcEjKensW4ggI8Fm4gTkoUKaID8j8gFw!!&amp;v=MDgxMTZQSVI4ZVgxTHV4WVM3RGgxVDNxVHJXTTFGckNVUjdxZlkrWnRGQ3JsVmI3UFZGMjZHYkd4RjlIRnFKRWI=</rdf:value>
+            </dcterms:URI>
+        </dc:identifier>
+        <dc:date>2017</dc:date>
+        <dc:description>Citation Key: liu_ponzo_2017</dc:description>
+        <dcterms:dateSubmitted>2020-04-02 15:17:13</dcterms:dateSubmitted>
+        <z:libraryCatalog>CNKI</z:libraryCatalog>
+        <z:type>硕士</z:type>
+        <z:language>中文;</z:language>
+        <dcterms:abstract>视觉错觉能够反映出视觉加工机制的基本原则,是我们了解人类视觉系统工作原理的一个有用工具。Ponzo错觉是一种重要的几何视觉错觉,其错觉图形表现为在两条竖直方向的会聚线中间有两条等长且平行的的水平线段,观察者会认为该错觉图形中上面的一条水平线段比下边的线段要长一些。自Ponzo错觉被意大利心理学家Mario Ponzo提出以来,就备受国内外相关研究者的关注,解释Ponzo错觉的理论也随之相继提出。目前对Ponzo错觉的解释理论中常见的有恒常性误用理论,双因素理论,同化理论,倾斜恒常性理论等。现有的对Ponzo错觉的解释理论主要从心理学、生理学等角度对其进行定性分析。这些理论能够有效的说明一些问题...</dcterms:abstract>
+        <dc:title>从逆问题求解角度解释Ponzo错觉</dc:title>
+    </bib:Thesis>
+    <z:Attachment rdf:about="#item_25770">
+        <z:itemType>attachment</z:itemType>
+        <dc:identifier>
+            <dcterms:URI>
+                <rdf:value>https://kns.cnki.net/kns/download.aspx?filename=4IXbOpmZWdHaVdFRlFUTaZlWpdUZnNWQyQHZvhUMKZnURd1S3ImQ3NHMwVDaUpXQsdWanJ0Z1xkWaB1VKF0ayhXdZBnQXBlN5EDaORVNMl3MOpUQn9Wd6d3YwhVQS9COZpGVU1mV4wGRwB1LYZVen5EcYF0QylXT&amp;dflag=nhdown&amp;tablename=CMFD201801&amp;uid=WEEvREcwSlJHSldRa1FhdkJtNEYweFRyUGJWRG5rbUcybGd4WUt0RGVuYz0=$9A4hF_YAuvQ5obgVAqNKPCYcEjKensW4ggI8Fm4gTkoUKaID8j8gFw!!</rdf:value>
+            </dcterms:URI>
+        </dc:identifier>
+        <dcterms:dateSubmitted>2020-04-02 15:17:16</dcterms:dateSubmitted>
+        <dc:title>Full Text CAJ</dc:title>
+        <z:linkMode>1</z:linkMode>
+        <link:type>application/caj</link:type>
+    </z:Attachment>
+    <rdf:Description rdf:about="https://proceedings.neurips.cc/paper/2018/hash/69386f6bb1dfed68692a24c8686939b9-Abstract.html">
+        <z:itemType>conferencePaper</z:itemType>
+        <dcterms:isPartOf>
+            <bib:Journal>
+                <prism:volume>31</prism:volume>
+                <dc:title>Advances in Neural Information Processing Systems</dc:title>
+            </bib:Journal>
+        </dcterms:isPartOf>
+        <bib:authors>
+            <rdf:Seq>
+                <rdf:li>
+                    <foaf:Person>
+                        <foaf:surname>Chen</foaf:surname>
+                        <foaf:givenName>Ricky T. Q.</foaf:givenName>
+                    </foaf:Person>
+                </rdf:li>
+                <rdf:li>
+                    <foaf:Person>
+                        <foaf:surname>Rubanova</foaf:surname>
+                        <foaf:givenName>Yulia</foaf:givenName>
+                    </foaf:Person>
+                </rdf:li>
+                <rdf:li>
+                    <foaf:Person>
+                        <foaf:surname>Bettencourt</foaf:surname>
+                        <foaf:givenName>Jesse</foaf:givenName>
+                    </foaf:Person>
+                </rdf:li>
+                <rdf:li>
+                    <foaf:Person>
+                        <foaf:surname>Duvenaud</foaf:surname>
+                        <foaf:givenName>David K.</foaf:givenName>
+                    </foaf:Person>
+                </rdf:li>
+            </rdf:Seq>
+        </bib:authors>
+        <link:link rdf:resource="#item_45876"/>
+        <dc:subject>_tablet</dc:subject>
+        <dc:subject>zothelper</dc:subject>
+        <dc:identifier>
+            <dcterms:URI>
+                <rdf:value>https://proceedings.neurips.cc/paper/2018/hash/69386f6bb1dfed68692a24c8686939b9-Abstract.html</rdf:value>
+            </dcterms:URI>
+        </dc:identifier>
+        <dc:date>2018</dc:date>
+        <dcterms:dateSubmitted>2021-02-27 09:12:36</dcterms:dateSubmitted>
+        <z:libraryCatalog>proceedings.neurips.cc</z:libraryCatalog>
+        <z:language>en</z:language>
+        <dc:title>Neural Ordinary Differential Equations</dc:title>
+    </rdf:Description>
+    <z:Attachment rdf:about="#item_45876">
+        <z:itemType>attachment</z:itemType>
+        <rdf:resource rdf:resource="attachments:learning/neural-nets/NeurIPS-Chen_et_al-2018-Neural_Ordinary_Differential_Equations.pdf"/>
+        <dc:subject>_tablet</dc:subject>
+        <dc:title>NeurIPS-Chen_et_al-2018-Neural_Ordinary_Differential_Equations.pdf</dc:title>
         <z:linkMode>2</z:linkMode>
         <link:type>application/pdf</link:type>
     </z:Attachment>
@@ -192,6 +473,7 @@
             </rdf:Seq>
         </bib:authors>
         <link:link rdf:resource="#item_57506"/>
+        <dc:subject>zothelper</dc:subject>
         <bib:pages>652-662</bib:pages>
         <dc:date>2021-02</dc:date>
         <dc:description>Conference Name: IEEE Transactions on Pattern Analysis and Machine Intelligence</dc:description>

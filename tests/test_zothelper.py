@@ -4,8 +4,8 @@
 # Author: Fred Qi
 # Created: 2021-08-22 18:32:58(+0800)
 #
-# Last-Updated: 2021-08-25 21:08:34(+0800) [by Fred Qi]
-#     Update #: 227
+# Last-Updated: 2021-08-27 14:08:59(+0800) [by Fred Qi]
+#     Update #: 320
 # 
 
 # Commentary:
@@ -44,7 +44,7 @@ class TestPaperIdParser(TestCase):
 
         for url, paper_id in zip(arxiv_urls, arxiv_ids):
             paper_id_ret = self.pidp.get_paper_id(url)
-            self.assertEqual(paper_id, paper_id_ret,
+            self.assertEqual(paper_id, paper_id_ret["uri"],
                              msg=f"Erorr parsing arXiv URL {url}")
 
 
@@ -56,7 +56,7 @@ class TestPaperIdParser(TestCase):
 
         for url, paper_id in zip(sd_urls, sd_ids):
             paper_id_ret = self.pidp.get_paper_id(url)
-            self.assertEqual(paper_id, paper_id_ret,
+            self.assertEqual(paper_id, paper_id_ret["uri"],
                              msg=f"Erorr parsing ScienceDirect URL {url}")
 
     def test_springer(self):
@@ -71,7 +71,7 @@ class TestPaperIdParser(TestCase):
 
         for url, paper_id in zip(springer_urls, springer_ids):
             paper_id_ret = self.pidp.get_paper_id(url)
-            self.assertEqual(paper_id, paper_id_ret,
+            self.assertEqual(paper_id, paper_id_ret["uri"],
                              msg=f"Erorr parsing SpringerLink URL {url}")
 
     def test_dois(self):
@@ -104,7 +104,7 @@ class TestPaperIdParser(TestCase):
 
         for url, paper_id in zip(doi_urls, dois):
             paper_id_ret = self.pidp.get_paper_id(url)
-            self.assertEqual(paper_id, paper_id_ret,
+            self.assertEqual(paper_id, paper_id_ret["uri"],
                              msg=f"Erorr parsing DOI-based URL {url}")
 
     def test_thecvf(self):
@@ -117,7 +117,7 @@ class TestPaperIdParser(TestCase):
 
         for url, paper_id in zip(cvf_urls, cvf_ids):
             paper_id_ret = self.pidp.get_paper_id(url)
-            self.assertEqual(paper_id, paper_id_ret,
+            self.assertEqual(paper_id, paper_id_ret["uri"],
                              msg=f"Erorr parsing DOI-based URL {url}")
 
 
@@ -137,7 +137,7 @@ class TestPaperIdParser(TestCase):
 
         for url, paper_id in zip(neurips_urls, neurips_ids):
             paper_id_ret = self.pidp.get_paper_id(url)
-            self.assertEqual(paper_id, paper_id_ret,
+            self.assertEqual(paper_id, paper_id_ret["uri"],
                              msg=f"Erorr parsing DOI-based URL {url}")
 
 
@@ -147,7 +147,7 @@ class TestEntryParser(TestCase):
     def setUp(self):
         self.entry_parser = EntryParser(RDF_FILEPATH)
         self.root = ET.parse(RDF_FILEPATH).getroot()
-    
+
     def test_namespace(self):
         ns = {'rdf': "http://www.w3.org/1999/02/22-rdf-syntax-ns#",
               'z': "http://www.zotero.org/namespaces/export#",
@@ -182,6 +182,23 @@ class TestEntryParser(TestCase):
             self.assertEqual(tag_ref, tag_abbrev,
                              msg=f"Abbrevation of {tag} is incorrect.")
 
+    def test_parse_node(self):
+        fields = {"dc:title": "title", "dc:date": "date", "prism:number": "number"}
+        entity_ref = {"title": "Caltech-256 Object Category Dataset",
+                      "date": "19 Apr 2007", "number": "CNS-TR-2007-001"}
+
+        entity_node = self.root.find("bib:Report", self.entry_parser.nsmap)
+        entity, children = self.entry_parser.parse_node(entity_node, fields)
+        # print("Testing...")
+        # for v in children:
+        #     print(v.tag, v.text, v.attrib)
+        for key, value in entity_ref.items():
+            self.assertIn(key, entity,
+                          msg=f"Field {key} has not been extracted.")
+            self.assertEqual(entity[key], value,
+                             msg=f"Field {key} is incorrect.")
+        self.assertEqual(len(children), 2, msg="Number of children is incorrect.")
+
     def test_get_journal_paper(self):
         entry_ref = {"title": "Res2Net: A New Multi-Scale Backbone Architecture",
                      "date": "2021-02", "pages": "652-662"}
@@ -193,7 +210,10 @@ class TestEntryParser(TestCase):
             self.assertEqual(value, entry[key], msg=f"Field {key} is incorrect.")
 
     def test_get_booksection(self):
-        entry_ref = {"title": "Visualizing and Understanding Convolutional Networks",
+        entry_ref = {"entryType": "bookSection",
+            "title": "Visualizing and Understanding Convolutional Networks",
+                     "bookTitle": "European Conference on Computer Vision (ECCV)",
+                     "seriesTitle": "Lecture Notes in Computer Science",
                      "date": "2014/09/06", "pages": "818-833"}
         node = self.root.find("bib:BookSection", self.entry_parser.nsmap)
         entry = self.entry_parser.get_entry(node)
@@ -210,9 +230,29 @@ class TestEntryParser(TestCase):
             self.assertIn(key, entry, msg=f"Field {key} has not been extracted.")
             self.assertEqual(value, entry[key], msg=f"Field {key} is incorrect.")
 
+    def test_get_document(self):
+        entry_ref = {"title": "Labelbox", "date": "2019-03-31T01:10:29Z"}
+        node = self.root.find("bib:Document", self.entry_parser.nsmap)
+        entry = self.entry_parser.get_entry(node)
+        for key, value in entry_ref.items():
+            self.assertIn(key, entry, msg=f"Field {key} has not been extracted.")
+            self.assertEqual(value, entry[key], msg=f"Field {key} is incorrect.")
+
+    def test_get_book(self):
+        entry_ref = {"title": "Introduction to Artificial Intelligence",
+                     "seriesTitle": "Undergraduate Topics in Computer Science",
+                     "isbn": "ISBN 978-3-319-58487-4",
+                     "date": "2017"}
+        node = self.root.find("bib:Book", self.entry_parser.nsmap)
+        entry = self.entry_parser.get_entry(node)
+        for key, value in entry_ref.items():
+            self.assertIn(key, entry, msg=f"Field {key} has not been extracted.")
+            self.assertEqual(value, entry[key], msg=f"Field {key} is incorrect.")
+
     def test_get_journal(self):
         jnl = self.root.find("bib:Journal", self.entry_parser.nsmap)
-        journal = self.entry_parser.get_journal(jnl)
+        jfields = self.entry_parser.fields_pub["bib:Journal"]
+        journal, _ = self.entry_parser.get_publication(jnl, jfields)
         journal_ref = {"journalTitle": "IEEE Transactions on Pattern Analysis and Machine Intelligence",
                        "volume": "43", "number": "2",
                        "issn": "ISSN 1939-3539",
@@ -221,10 +261,10 @@ class TestEntryParser(TestCase):
             self.assertIn(key, journal, msg=f"{key} has not been extracted.")
             self.assertEqual(journal[key], value, msg=f"{key} is incorrect.")
 
-        jnl = self.root.find("rdf:Description/dcterms:isPartOf/bib:Journal", self.entry_parser.nsmap)
-        title = self.entry_parser.get_xml_tag(jnl, "dc:title")
-        self.assertEqual("The IEEE Conference on Computer Vision and Pattern Recognition (CVPR)",
-                         title, msg="Title is incorrect")
+        # jnl = self.root.find("rdf:Description/dcterms:isPartOf/bib:Journal", self.entry_parser.nsmap)
+        # title = self.entry_parser.get_xml_tag(jnl, "dc:title")
+        # self.assertEqual("The IEEE Conference on Computer Vision and Pattern Recognition (CVPR)",
+        #                  title, msg="Title is incorrect")
 
     def test_collect_journals(self):
         self.entry_parser.collect_journals(self.root)
@@ -246,7 +286,15 @@ class TestEntryParser(TestCase):
         au_ref = {"surname": "Torr", "givenName": "Philip"}
         self.assertEqual(author, au_ref,
                          msg=f"The last author is {au_ref['givenName']} {au_ref['surname']}")
-            
+
+    def test_get_all_entries(self):
+        
+        entries = self.entry_parser.get_all_entries(self.root)
+
+        self.assertEqual(len(self.entry_parser.journals), 1)
+        self.assertEqual(len(self.entry_parser.attachments), 11)
+        self.assertEqual(len(entries), 9)
+                
 
 class TestZoteroParser(TestCase):
 
@@ -254,8 +302,11 @@ class TestZoteroParser(TestCase):
         self.rdf_parser = ZoteroRDFParser()
 
     def test_iteritem(self):
-        ret = self.rdf_parser.load(RDF_FILEPATH)
-        self.assertIsNotNone(ret, msg=f"Error loading {RDF_FILEPATH}.")
+        self.rdf_parser.load(RDF_FILEPATH)
+        entries = self.rdf_parser.entries
+        # for item in entries:
+        #     print(item.get("title"), item.get("entryType"))
+        self.assertEqual(len(entries), 9, msg=f"Error loading {RDF_FILEPATH}.")
 
 # 
 # test_zothelper.py ends here

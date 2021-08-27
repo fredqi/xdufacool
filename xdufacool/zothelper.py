@@ -5,8 +5,8 @@
 # Author: Fred Qi
 # Created: 2021-08-11 17:29:25(+0800)
 #
-# Last-Updated: 2021-08-25 21:15:39(+0800) [by Fred Qi]
-#     Update #: 1672
+# Last-Updated: 2021-08-27 14:31:43(+0800) [by Fred Qi]
+#     Update #: 2125
 # 
 
 # Commentary:
@@ -46,20 +46,25 @@ class paperIDParser(object):
                     "neurips": "paper/\d{4}/(hash|file)/(?P<paper_id>[0-9a-f]+)-\w+\.(pdf|html)" }
         self.parsers = dict([(k, re.compile(v)) for k, v in patterns.items()])
         
-    def get_paper_id(self, url):
+        pubid_pattern = "^\s*(?P<pubid_type>doi|issn|isbn).+$"
+        self.pubid_parser = re.compile(pubid_pattern, re.I)
+
+    def get_paper_id(self, text):
         """Obtain arxiv paper id from a given string."""
-        m = self.url_parser.match(url)
-        if not m:
-            return None
-        
-        domain, content = m.group('domain'), m.group('content')
-        if domain not in self.parsers:
-            # print(domain, content)
-            return None
-        pm = self.parsers[domain].search(content)
-        if pm is None:
-            return None
-        return domain + " " + pm.group('paper_id')
+        pubid = {}
+        is_uri = self.url_parser.match(text)
+        if not is_uri:
+            m = self.pubid_parser.match(text)
+            if m:
+                key = m.group("pubid_type").lower()
+                pubid[key] = text.strip()
+        else:
+            domain, content = is_uri.group('domain'), is_uri.group('content')
+            if domain in self.parsers:
+                pm = self.parsers[domain].search(content)
+                if pm:
+                    pubid["uri"] = domain + " " + pm.group('paper_id')
+        return pubid
 
 
 class EntryParser(object):
@@ -72,34 +77,41 @@ class EntryParser(object):
         self.pubid_parser = re.compile(pubid_pattern, re.I)
         self.nsmap = EntryParser.get_xml_namespaces(filename)
         self.insmap = dict([(v, k) for k, v in self.nsmap.items()])
+       
         rdf_ns = self.nsmap['rdf']
         self.rdf_res = f"{{{rdf_ns}}}resource"
         self.rdf_about = f"{{{rdf_ns}}}about"
-        self.dc_part = "dcterms:isPartOf"
-        self.journals = {}
-        self.journal_fields = {"journalTitle": "dc:title",
-                               "volume": "prism:volume",
-                               "number": "prism:number"}
-        self.book_fields = {"bookTitle": "dc:title",
-                            "seriesTitle": "dcterms:isPartOf/bib:Series/dc:title",
-                            "seriesNumber": "dcterms:isPartOf/bib:Series/dc:identifier"}
-        self.creators = {"authors": "bib:authors", "editors": "bib:editors"}
-        self.name_parts = {"surname": "foaf:surname",
-                           "givenName": "foaf:givenName"}
-        # self.fields = {"title": "dc:title",
-        #                "abstract": "dcterms:abstract",
-        #                "pages": "bib:pages", "date": "dc:date"}    
-        self.fields = {"dc:title": "title",
-                       "dcterms:abstract": "abstract",
-                       "bib:pages": "pages",
-                       "dc:date": "date"}
+        self.dc_uri = "dcterms:URI"
+        self.dc_ispart = "dcterms:isPartOf"
+        self.dc_haspart = "dcterms:hasPart"
+
+        self.paper_id_parser = paperIDParser()
+        
+        self.fields_pub = {"bib:Journal": {"dc:title": "journalTitle",
+                                           "prism:volume": "volume",
+                                           "prism:number": "number"},
+                           "bib:Book": {"dc:title": "bookTitle"},
+                           "bib:Series": {"dc:title": "seriesTitle",
+                                          "dc:identifier": "seriesNumber"}}        
+        # self.journal_fields = {"dc:title": "journalTitle",
+        #                        "prism:volume": "volume", "prism:number": "number"}
+        # self.book_fields = {"dc:title": "bookTitle", "dc:identifier": "isbn"}
+        # self.series_fields = {"dc:title": "seriesTitle", "dc:identifier": "seriesNumber"}
+        self.fields = { "z:itemType": "entryType", "dc:title": "title",
+                        "dcterms:abstract": "abstract",
+                        "foaf:name": "publisher",
+                        "bib:pages": "pages", "dc:date": "date"}
         self.fields_creators = {"bib:authors": "authors", "bib:editors": "editors"}
+        self.name_parts = {"foaf:surname": "surname", "foaf:givenName": "givenName"}
+        self.non_entry = set(["bib:Journal", "z:Attachment", "z:Collection"])
+        
+        self.journals = {}
+        self.attachments = {}
 
     @staticmethod
     def get_xml_namespaces(filename):
         namespaces = []
-        for _, value in ET.iterparse(filename,
-                                       events=['start-ns']):
+        for _, value in ET.iterparse(filename, events=['start-ns']):
             namespaces.append(value)
         return dict(namespaces)
 
@@ -117,109 +129,191 @@ class EntryParser(object):
         value = tag.text.strip()
         return value
 
-    def parse_fields(self, elem):
-        entry = {}
-        for node in elem:
-            tag_abbrev = self.get_abbrev_tag(node.tag)
-            if tag_abbrev in self.fields:
-                key = self.fields[tag_abbrev]
-                entry[key] = node.text.strip()
-            if tag_abbrev in self.fields_creators:
-                key = self.fields_creators[tag_abbrev]
-                entry[key] = self.get_creators(node)
-        return entry
+    def parse_node(self, node, fields,
+                   fields_seq={"link:link": "links", "dc:subject": "keywords"}):
+        """Extract fields from flatten leaves of the given node."""
+
+        def update_seq(entry, key, value):
+            entry[key] = entry.get(key, []) + [value]
+            
+        entity, children = {}, []
+        for item in node:
+            tag = self.get_abbrev_tag(item.tag)
+            if not item.text:
+                if tag in fields_seq:
+                    key, link = fields_seq[tag], item.get(self.rdf_res)
+                    update_seq(entity, key, link)
+                else:
+                    children.append(item) # dcterms:isPartOf with children
+            elif not item.text.strip():
+                children.append(item) # authors and publisher
+            elif tag in fields:
+                key = fields[tag]
+                entity[key] = item.text.strip()
+            elif tag in fields_seq:
+                key = fields_seq[tag]
+                update_seq(entity, key, item.text.strip())
+            elif "dc:identifier" == tag:
+                children.append(item) # pubid special treatment
+        return entity, children
+
+    # def parse_fields(self, elem):
+    #     entry = {}
+    #     for node in elem:
+    #         tag_abbrev = self.get_abbrev_tag(node.tag)
+    #         if tag_abbrev in self.fields:
+    #             key = self.fields[tag_abbrev]
+    #             entry[key] = node.text.strip()
+    #         if tag_abbrev in self.fields_creators:
+    #             key = self.fields_creators[tag_abbrev]
+    #             entry[key] = self.get_creators(node)
+    #     return entry
 
     def get_creators(self, elem):
         """Get creators of the given entry."""
         creators = []
-        tag_person = "rdf:Seq/rdf:li/foaf:Person"
-        for elem_p in elem.iterfind(tag_person, self.nsmap):
-            person = {}
-            for key_np, tag_np in self.name_parts.items():
-                person[key_np] = elem_p.find(tag_np, self.nsmap).text
-            creators.append(person)
-        return creators                
+        for node in elem.iter():
+            tag = self.get_abbrev_tag(node.tag)
+            if "foaf:Person" == tag:
+                person, _ = self.parse_node(node, self.name_parts)
+                creators.append(person)
+        return creators
+
+    def get_pubid(self, node):
+        pubid = {}
+        if node.text and node.text.strip():
+            item = self.paper_id_parser.get_paper_id(node.text)
+            pubid.update(item if item else {})
+        else:
+            for sn in node.iterfind(f"{self.dc_uri}/rdf:value", self.nsmap):
+                item = self.paper_id_parser.get_paper_id(sn.text)
+                pubid.update(item if item else {})
+        return pubid
     
-    def get_publication_ids(self, elem, dc_id="dc:identifier"):
-        """To obtain publication IDs, such as DOI, ISSN, ISBN, etc, from a
-        given element.
+    # def get_publication_ids(self, id_elems):
+    #     """To obtain publication IDs, such as DOI, ISSN, ISBN, etc, from a
+    #     given element.
 
-        """
-        ids = {}
-        id_texts = [x.text for x in elem.iterfind(dc_id, self.nsmap)]
-        for id_text in id_texts:
-            m = self.pubid_parser.match(id_text) 
-            if m:
-                key = m.group("pubid_type").lower()
-                ids[key] = id_text
-        return ids
+    #     """
+    #     ids = {}
+    #     for item in id_elems:
+    #         m = self.pubid_parser.match(item.text)
+    #         if m:
+    #             key = m.group("pubid_type").lower()
+    #             ids[key] = item.text.strip()
+    #     return ids
+
+    def get_publication(self, elem, fields):
+        """Get a publication."""
+        pub, id_nodes = self.parse_node(elem, fields)
+        nodes_left = []
+        for item in id_nodes:
+            tag = self.get_abbrev_tag(item.tag)
+            if "dc:identifier" == tag:
+                pub.update(self.get_pubid(item))
+            else:
+                nodes_left.append(item)
+        return pub, nodes_left                                    
         
-    def get_journal(self, elem):
-        """Collect information of all journals."""
-        journal = self.get_publication_ids(elem)
-        for key, tag in self.journal_fields.items():
-            journal[key] = self.get_xml_tag(elem, tag)
-        return journal
+    # def get_journal(self, elem):
+    #     """Collect information of all journals."""
+    #     journal, id_nodes = self.parse_node(elem, self.journal_fields)
+    #     for sn in id_nodes:
+    #         journal.update(self.get_pubid(sn))
+    #     return journal
 
-    def get_book(self, elem):
-        book = self.get_publication_ids(elem)
-        for key, tag in self.book_fields.items():
-            book[key] = self.get_xml_tag(elem, tag)
-        return book
+    # def get_book(self, elem):
+    #     book, id_nodes = self.parse_node(elem, self.book_fields)
+    #     # Search series
+    #     while id_nodes:
+    #         node = id_nodes.pop()
+    #         tag = self.get_abbrev_tag(node.tag)
+    #         if "bib:Series" == tag:
+    #             series, _ = self.parse_node(node, self.series_fields)
+    #             book.update(series)
+    #         else:
+    #             id_nodes.extend([sn for sn in node])
+    #     return book
+
+    def get_entry(self, elem):
+        entry, nodes = self.parse_node(elem, self.fields)
+        while nodes:
+            node = nodes.pop()
+            tag = self.get_abbrev_tag(node.tag)
+            if tag in self.fields_pub:
+                pub, nodes_left = self.get_publication(node, self.fields_pub[tag])
+                entry.update(pub)
+                nodes.extend(nodes_left)
+            elif "dc:identifier" == tag:
+                entry.update(self.get_pubid(node))
+            elif "dc:subject" == tag:
+                if "keywords" not in entry:
+                    entry["keywords"] = []
+                entry["keywords"].append(node.text)
+            elif tag in self.fields_creators:
+                creator_type = self.fields_creators[tag]
+                entry[creator_type] = self.get_creators(node)
+            elif self.dc_ispart == tag:
+                jref_id = node.get(self.rdf_res)
+                if jref_id in self.journals:
+                    entry.update(self.journals[jref_id])
+                else:
+                    nodes.extend([sn for sn in node])
+        # keys = ["doi", "isbn", "issn", "uri"]
+        # print(" ".join([entry.get(key, "") for key in keys]))
+        return entry
 
     def collect_journals(self, rdf_root):
         """Collect all journals in the given RDF file."""
         for elem in rdf_root.iterfind("bib:Journal", self.nsmap):
             jnl_ref = elem.get(self.rdf_about)
-            journal = self.get_journal(elem)
-            self.journals[jnl_ref] = journal            
+            journal, _ = self.get_publication(elem, self.fields_pub["bib:Journal"])
+            self.journals[jnl_ref] = journal
+            
+    def collect_attachments(self, rdf_root):
+        """Collect all attachments in the given RDF file."""
+        for item in rdf_root.iterfind("z:Attachment", self.nsmap):
+            att_ref = item.get(self.rdf_about)
+            entry = self.get_entry(item)
+            self.attachments[att_ref] = entry
        
-    def get_entry(self, elem):
-        entry = self.parse_fields(elem)
-        tag_abbrev = self.get_abbrev_tag(elem.tag)
-        if "bib:Article" == tag_abbrev:
-            jref = elem.find(self.dc_part, self.nsmap)
-            if jref is not None:
-                jref_id = jref.get(self.rdf_res)
-                entry.update(self.journals[jref_id])
-                # entry["journal"] = self.journals[jref_id]
+    def get_all_entries(self, rdf_root):
+        """Get all entries in a given RDF XML tree."""
+        if not self.journals:
+            self.collect_journals(rdf_root)
+        if not self.attachments:
+            self.collect_attachments(rdf_root)
 
-        if "bib:BookSection" == tag_abbrev:
-            book_node = elem.find("dcterms:isPartOf/bib:Book", self.nsmap)
-            if book_node:
-                entry.update(self.get_book(book_node))
-
-        if "rdf:Description" == tag_abbrev:
-            pass
-        
-        # print(entry)
-        return entry
+        entries = []
+        for item in rdf_root:
+            tag = self.get_abbrev_tag(item.tag)
+            if tag not in self.non_entry:
+                entry = self.get_entry(item)
+                entries.append(entry)
+        return entries
 
 
 class ZoteroRDFParser(object):
     """To parse a zotero xml RDF file."""
 
     def __init__(self):
-        self._tree = None
-        self._root = None
-        self.tag_abbrev = None
-        self.articles = {}
-        self.attachments = {}
-        self.entries = []
+        # self._tree = None
+        # self._root = None
+        # self.tag_abbrev = None
+        # self.articles = {}
+        # self.attachments = {}
+        self.entries = None
 
     def load(self, filename):
         self._tree = ET.parse(filename)
         self._root = self._tree.getroot()
         self.tag_abbrev = EntryParser(filename)
-        
-        n_item = 0
-        for item in self._root:
-            type_node = item.find("z:itemType", self.tag_abbrev.nsmap)
-            n_item += 1
 
-        return self._tree
+        entry_parser = EntryParser(filename)
+        root = ET.parse(filename).getroot()
+        self.entries = entry_parser.get_all_entries(root)
 
-    def save(filename):
+    def save(self, filename):
         pass
         
 
