@@ -13,6 +13,7 @@ class MailHelper:
     _fields = ["SUBJECT", "FROM", "DATE", "TO", "MESSAGE-ID", "IN-REPLY-TO"]
 
     def __init__(self, imapserver, smtpserver=None):
+        self._flags = set(["Seen", "Answered", "Flagged"])
         self.imapclient = imaplib.IMAP4_SSL(imapserver)
         self.smtpclient = None
         if isinstance(smtpserver, str):
@@ -135,6 +136,20 @@ class MailHelper:
     def mark_as_read(self, email_uid):
         """Mark an email as read."""
         self.imapclient.uid("STORE", email_uid, "+FLAGS", "(\\Seen)")
+
+    def flag(self, email_uid, flags):
+        """Mark an email as read."""
+        flags = list(set(flags) & self._flags)
+        if flags:
+            flag_str = " ".join([f"\\{flag}" for flag in flags])
+            self.imapclient.uid("STORE", email_uid, "+FLAGS", f"({flag_str})")
+
+    def unflag(self, email_uid, flags):
+        """Mark an email as read."""
+        flags = list(set(flags) & self._flags)
+        if flags:
+            flag_str = " ".join([f"\\{flag}" for flag in flags])
+            self.imapclient.uid("STORE", email_uid, "-FLAGS", f"({flag_str})")
 
     def send_email(self, from_addr, to_addr, msg):
         """Send a email."""

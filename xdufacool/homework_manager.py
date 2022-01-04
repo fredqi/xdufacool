@@ -8,8 +8,8 @@
 # ----------------------------------------------------------------------
 # ## CHANGE LOG
 # ----------------------------------------------------------------------
-# Last-Updated: 2022-01-04 21:33:45(+0800) [by Fred Qi]
-#     Update #: 2001
+# Last-Updated: 2022-01-04 23:17:54(+0800) [by Fred Qi]
+#     Update #: 2027
 # ----------------------------------------------------------------------
 import re
 import os.path
@@ -230,14 +230,14 @@ class HomeworkManager:
         self.download = config['homework'].getboolean('download')
         self.folder = config['homework']['folder']
         self.conditions = config['homework']['conditions']
-        logging.debug(f"search conditions = self.conditions")
+        logging.debug(f"search conditions = {self.conditions}")
         if not os.path.exists(self.folder):
             os.mkdir(self.folder)
 
         # Setup the mail_helper
         email_sec = config['email']
         self.testing = email_sec.getboolean('testing')
-        logging.debug(f"testing mode = self.testing")
+        logging.debug(f"testing mode = {self.testing}")
         if self.testing:
             self.mail_helper = MailHelper(email_sec['imap_server'])
         else:
@@ -265,16 +265,18 @@ class HomeworkManager:
             header = self.mail_helper.fetch_header(euid)
             student_id, _ = parse_subject(header['subject'])
             if student_id is None:
-                logging.warning(f'{euid} header["subject"]')
+                logging.warning(f'{euid} {header["subject"]}')
                 continue            
             logging.info(f'{euid} {student_id}')
             if student_id not in self.homeworks:
                 if header['from'] != Homework.email_teacher:
                     self.homeworks[student_id] = Homework(euid, header)
+                    # self.mail_helper.unflag(euid, ['Seen'])
             else:
-                email_uid_prev = self.homeworks[student_id].update(euid, header)
-                if email_uid_prev is not None:
-                    self.mail_helper.mark_as_read(email_uid_prev)
+                euid_prev = self.homeworks[student_id].update(euid, header)
+                if euid_prev:
+                    self.mail_helper.flag(euid_prev, ['Seen', 'Answered'])
+                    logging.debug(f"Flagged {euid_prev} {student_id} as answered.")
 
     def send_confirmation(self):
         """Send confirmation to unreplied emails."""
@@ -289,10 +291,12 @@ class HomeworkManager:
             if not hw.is_confirmed():
                 body, attachments = self.mail_helper.fetch_email(hw.latest_email_uid)
                 hw.save(body, attachments)
+                self.mail_helper.flag(hw.latest_email_uid, ['Seen'])
                 logging.info(f"{student_id} downloaded.")
                 to_addr, msg = hw.create_confirmation()
                 if not self.testing:
                     self.mail_helper.send_email(Homework.email_teacher, to_addr, msg)
+                    self.mail_helper.flag(hw.latest_email_uid, ['Answered'])
                     logging.info(f"{student_id} confirmed.")
             elif self.download:
                 body, attachments = self.mail_helper.fetch_email(hw.latest_email_uid)
