@@ -39,8 +39,8 @@ class MailHelper:
 
         # print(len(data), type(data), type(data[0]))
         items = [str(dt, 'utf-8') for dt in data[0].split()]
-        logtxt = u'%d mails to be processed.' % len(items)
-        print(logtxt)
+        # logtxt = u'%d mails to be processed.' % len(items)
+        # print(logtxt)
         return items
 
     def fetch_header(self, email_uid):

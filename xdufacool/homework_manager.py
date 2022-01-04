@@ -8,11 +8,9 @@
 # ----------------------------------------------------------------------
 # ## CHANGE LOG
 # ----------------------------------------------------------------------
-# Last-Updated: 2022-01-03 22:23:36(+0800) [by Fred Qi]
-#     Update #: 1709
+# Last-Updated: 2022-01-04 18:22:24(+0800) [by Fred Qi]
+#     Update #: 1892
 # ----------------------------------------------------------------------
-from __future__ import print_function
-
 import codecs
 import getpass
 import hashlib
@@ -23,6 +21,8 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.utils import formataddr
 from argparse import ArgumentParser
+from configparser import ConfigParser
+from configparser import ExtendedInterpolation
 
 from xdufacool.mail_helper import MailHelper
 
@@ -76,12 +76,20 @@ class Homework():
     exts_docs = None
 
     @staticmethod
+    def init_from_config(configfile):
+        config = ConfigParser(interpolation=ExtendedInterpolation())
+        config.read(configfile)
+        Homework.name_teacher = config['teacher']['name']
+        Homework.mail_template = config['email']['template']
+
+    @staticmethod
     def initialize_static_variables(homework_id="HW0000",
                                     class_id="0" * 7,
                                     email_teacher="fred.qi@ieee.org",
                                     name_teacher="Fei Qi"):
         Homework.homework_id = homework_id
         Homework.class_id = class_id
+        Homework.folder = homework_id
         Homework.email_teacher = email_teacher
         Homework.name_teacher = name_teacher
 
@@ -144,7 +152,6 @@ https://fredqi.me
         # In case this is a confirmation email
         if header['from'] == Homework.email_teacher:
             if 'in-reply-to' in header:
-                print(header['in-reply-to'])
                 self.replied.add(header['in-reply-to'])
             return
 
@@ -173,9 +180,7 @@ https://fredqi.me
 
     def save(self, body, attachments, overwrite=False):
         """Update homework and save attachments to disk."""
-        # print(Homework.class_id, self.student_id)
-        stu_path = os.path.join(Homework.class_id, self.student_id)
-        # print(stu_path)
+        stu_path = os.path.join(Homework.folder, self.student_id)
         if not os.path.exists(stu_path):
             os.mkdir(stu_path)
 
@@ -194,7 +199,6 @@ https://fredqi.me
         msg = MIMEMultipart()
         from_address = (Homework.name_teacher, Homework.email_teacher)
         msg['From'] = formataddr(from_address)
-        # to_addr = 'fred.qi@gmail.com'  # for DEBUG
         to_addr = self.info['from']
         msg['To'] = formataddr((self.info['name'], to_addr))
         msg['In-Reply-To'] = self.info['message-id']
@@ -218,8 +222,6 @@ https://fredqi.me
 
         body = Homework.mail_template.format(**data)
         msg.attach(MIMEText(body, 'plain', 'utf-8'))
-        # print(self.info['name'], self.info['from'], self.info['subject'])
-        # print(body)
         return to_addr, msg
 
     def is_confirmed(self):
@@ -228,7 +230,6 @@ https://fredqi.me
 
     def display(self):
         """Display the content of the homework to be processed."""
-        # fields = None
         fields = ["subject", "name", "from", "date", "message-id"]
         print("\n".join(MailHelper.format_header(self.info, fields)))
 
@@ -236,18 +237,95 @@ https://fredqi.me
 class HomeworkManager:
     """The class for processing homework submitted via mail."""
 
-    def __init__(self, class_id='1402015',
-                 name="Fred Qi",
-                 email_addr="fred.qi@ieee.org"):
-        self.class_id = class_id  # Class ID
+    # def __init__(self, class_id='1402015',
+    #              name="Fred Qi",
+    #              email_addr="fred.qi@ieee.org"):
+    #     self.class_id = class_id  # Class ID
+    #     self.homeworks = dict()
+    #     self.mail_label = '"[Gmail]/All Mail"'
+
+    #     # Create a folder for the class
+    #     if not os.path.exists(self.class_id):
+    #         os.mkdir(self.class_id)
+
+    def __init__(self, configfile):
+        """Initialize the class from the config file."""
         self.homeworks = dict()
         self.mail_label = '"[Gmail]/All Mail"'
+        self.verbose = True
+        
+        config = ConfigParser(interpolation=ExtendedInterpolation())
+        config.read(configfile)
 
-        # Create a folder for the class
-        if not os.path.exists(self.class_id):
-            os.mkdir(self.class_id)
+        # Setup folder and search conditions for attachments
+        self.download = config['homework'].getboolean('download')
+        self.folder = config['homework']['folder']
+        self.conditions = config['homework']['conditions']
+        if not os.path.exists(self.folder):
+            os.mkdir(self.folder)
 
+        # Setup the mail_helper
+        self.testing = config['email'].getboolean('testing')
+        if self.testing:
+            print(config['homework']['conditions'])
+            self.mail_helper = MailHelper('imap.gmail.com')
+        else:
+            self.mail_helper = MailHelper('imap.gmail.com', 'smtp.gmail.com')
+        email = config['email']['address']
+        Homework.homework_id = config['homework']['homework-id']
+        Homework.folder = config['homework']['folder']
+        Homework.email_teacher = config['email']['address']
+        Homework.name_teacher = config['teacher']['name']
+        Homework.mail_template = config['email']['template']
+        # print(Homework.mail_template)
+        self.mail_helper.login(Homework.email_teacher, config['email']['password'])
 
+    def check_headers(self):
+        """Fetch email headers."""
+        email_uids = self.mail_helper.search(self.mail_label, self.conditions)
+        # if self.verbose:
+        #     from tqdm import tqdm
+        #     pbar = tqdm(total=len(email_uids))
+        for euid in email_uids:
+            # if self.verbose:
+            #     pbar.set_description(euid)
+            #     pbar.update()
+            header = self.mail_helper.fetch_header(euid)
+            student_id, _ = parse_subject(header['subject'])
+            if student_id is None:
+                continue
+            if student_id not in self.homeworks:
+                if header['from'] != Homework.email_teacher:
+                    self.homeworks[student_id] = Homework(euid, header)
+            else:
+                email_uid_prev = self.homeworks[student_id].update(euid, header)
+                if email_uid_prev is not None:
+                    self.mail_helper.mark_as_read(email_uid_prev)
+
+    def send_confirmation(self):
+        """Send confirmation to unreplied emails."""
+        # if self.verbose:
+        #     from tqdm import tqdm
+        #     pbar = tqdm(total=len(self.homeworks))
+        for student_id, hw in self.homeworks.items():
+            # if self.verbose:
+            #     pbar.set_description(student_id)
+            #     pbar.update()
+            if not hw.is_confirmed():
+                body, attachments = self.mail_helper.fetch_email(hw.latest_email_uid)
+                hw.save(body, attachments)
+                to_addr, msg = hw.create_confirmation()
+                if not self.testing:
+                    self.mail_helper.send_email(Homework.email_teacher, to_addr, msg)
+            elif self.download:
+                print(student_id)
+                body, attachments = self.mail_helper.fetch_email(hw.latest_email_uid)
+                hw.save(body, attachments)
+
+    def quit(self):
+        self.mail_helper.quit()
+
+  
 def parse_cmd():
     desc = "To check and download homeworks from an IMAP server."
     parser = ArgumentParser(description=desc)
@@ -284,78 +362,85 @@ def parse_cmd():
     subjects = args.subject.split()
     Homework.initialize_static_variables(subjects[-1], args.class_id,
                                          "fred.qi@ieee.org", "Fei Qi")
-
+    
     return (args.class_id, mcond, args.test)
 
 
 def check_homeworks(download=True):
-    class_id, mcond, test_mode = parse_cmd()
-    if not os.path.exists(class_id):
-        os.mkdir(class_id)
-    logfn = os.path.join(class_id, 'download.log')
-    logfile = codecs.open(logfn, 'a', encoding='utf-8')
+    Homework.initialize_static_variables()
+    # # class_id, mcond, test_mode = parse_cmd()
+    # Homework.init_from_config("config.ini")
+    # if not os.path.exists(class_id):
+    #     os.mkdir(class_id)
+    # logfn = os.path.join(class_id, 'download.log')
+    # logfile = codecs.open(logfn, 'a', encoding='utf-8')
 
-    if test_mode:
-        mh = MailHelper('imap.gmail.com')
-    else:
-        mh = MailHelper('imap.gmail.com', 'smtp.gmail.com')
+    # if test_mode:
+    #     mh = MailHelper('imap.gmail.com')
+    # else:
+    #     mh = MailHelper('imap.gmail.com', 'smtp.gmail.com')
 
-    print('Please input the password of', Homework.email_teacher)
-    mh.login(Homework.email_teacher, getpass.getpass())
+    # print('Please input the password of', Homework.email_teacher)
+    # mh.login(Homework.email_teacher, getpass.getpass())
 
-    mgr = HomeworkManager(class_id)
-    email_uids = mh.search(mgr.mail_label, mcond)
-    for euid in email_uids:
-        header = mh.fetch_header(euid)
-        logtxt = " ".join(["Processing", header['subject'],
-                           "from", header['from']])
-        # print(logtxt)
-        logfile.writelines(logtxt + '\n')
-        student_id, _ = parse_subject(header['subject'])
-        print(student_id, header['from'], header.get('in-reply-to', '<>'))
-        if student_id is None:
-            continue
-        if student_id not in mgr.homeworks:
-            if header['from'] != Homework.email_teacher:
-                mgr.homeworks[student_id] = Homework(euid, header)
-        else:
-            email_uid_prev = mgr.homeworks[student_id].update(euid, header)
-            if email_uid_prev is not None:
-                mh.mark_as_read(email_uid_prev)
+    # mgr = HomeworkManager(class_id)
+    mgr = HomeworkManager('config.ini')
+    mgr.check_headers()
+    mgr.send_confirmation()
+    mgr.quit()
 
-    idx_reply = 0
-    cnt_total = len(mgr.homeworks)
-    for _, hw in mgr.homeworks.items():
-        if download:
-            idx_reply += 1
-            # hw.display()
-            mail_size = hw.info['size'] * 1.0 / 1024
-            logtxt = u"  Downloading the mail [{index}/{total}][{size:5.1f}KB]..."
-            logtxt = logtxt.format(index=idx_reply, total=cnt_total, size=mail_size)
-            print(logtxt)
-            logfile.writelines(logtxt + '\n')
-            body, attachments = mh.fetch_email(hw.latest_email_uid)
-            # print(hw.latest_email_uid, hw.info,
-            #       hw.student_id, type(hw.student_id))
-            hw.save(body, attachments)
-            hw.display()
-            if not hw.is_confirmed():
-                to_addr, msg = hw.create_confirmation()
-                # print(to_addr)                
-                if not test_mode:
-                    mh.send_email(Homework.email_teacher, to_addr, msg)
+    # email_uids = mh.search(mgr.mail_label, mcond)
+    # for euid in email_uids:
+    #     header = mh.fetch_header(euid)
+    #     logtxt = " ".join(["Processing", header['subject'],
+    #                        "from", header['from']])
+    #     # print(logtxt)
+    #     logfile.writelines(logtxt + '\n')
+    #     student_id, _ = parse_subject(header['subject'])
+    #     print(student_id, header['from'], header.get('in-reply-to', '<>'))
+    #     if student_id is None:
+    #         continue
+    #     if student_id not in mgr.homeworks:
+    #         if header['from'] != Homework.email_teacher:
+    #             mgr.homeworks[student_id] = Homework(euid, header)
+    #     else:
+    #         email_uid_prev = mgr.homeworks[student_id].update(euid, header)
+    #         if email_uid_prev is not None:
+    #             mh.mark_as_read(email_uid_prev)
 
-    mh.quit()
+    # idx_reply = 0
+    # cnt_total = len(mgr.homeworks)
+    # for _, hw in mgr.homeworks.items():
+    #     if download:
+    #         idx_reply += 1
+    #         # hw.display()
+    #         mail_size = hw.info['size'] * 1.0 / 1024
+    #         logtxt = u"  Downloading the mail [{index}/{total}][{size:5.1f}KB]..."
+    #         logtxt = logtxt.format(index=idx_reply, total=cnt_total, size=mail_size)
+    #         print(logtxt)
+    #         logfile.writelines(logtxt + '\n')
+    #         body, attachments = mh.fetch_email(hw.latest_email_uid)
+    #         # print(hw.latest_email_uid, hw.info,
+    #         #       hw.student_id, type(hw.student_id))
+    #         hw.save(body, attachments)
+    #         hw.display()
+    #         if not hw.is_confirmed():
+    #             to_addr, msg = hw.create_confirmation()
+    #             # print(to_addr)                
+    #             if not test_mode:
+    #                 mh.send_email(Homework.email_teacher, to_addr, msg)
 
-    msg = "There are {replied}/{total} emails have been replied."
-    print(msg.format(replied=idx_reply, total=cnt_total))
+    # mh.quit()
+  
+    # msg = "There are {replied}/{total} emails have been replied."
+    # print(msg.format(replied=idx_reply, total=cnt_total))
 
-    stu_ids = sorted(mgr.homeworks.keys())
+    # stu_ids = sorted(mgr.homeworks.keys())
 
-    text = [stu + ', 1\n' for stu in stu_ids]
-    textfile = open(Homework.homework_id + ".csv", 'w')
-    textfile.writelines(text)
-    textfile.close()
+    # text = [stu + ', 1\n' for stu in stu_ids]
+    # textfile = open(Homework.homework_id + ".csv", 'w')
+    # textfile.writelines(text)
+    # textfile.close()
 
 
 # ----------------------------------------------------------------------
