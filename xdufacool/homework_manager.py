@@ -8,8 +8,8 @@
 # ----------------------------------------------------------------------
 # ## CHANGE LOG
 # ----------------------------------------------------------------------
-# Last-Updated: 2020-08-07 10:26:26(+0800) [by Fred Qi]
-#     Update #: 1627
+# Last-Updated: 2022-01-03 22:23:36(+0800) [by Fred Qi]
+#     Update #: 1709
 # ----------------------------------------------------------------------
 from __future__ import print_function
 
@@ -49,13 +49,13 @@ def parse_subject(subject):
     """
     if not hasattr(parse_subject, 're_id'):
         parse_subject.re_id = re.compile(r'(?P<stuid>[0-9xtXT]{9,12}|X{3,5})')
-    if not hasattr(parse_subject, 'year'):
-        parse_subject.year = re.compile(r'(?P<year>2020)')
+    # if not hasattr(parse_subject, 'year'):
+    #     parse_subject.year = re.compile(r'(?P<year>2020)')
     student_id, name = None, None
     m = parse_subject.re_id.search(subject)
     if m is not None:
         student_id = m.group('stuid')
-        name = subject[m.end('stuid') + 1:]
+        name = subject[m.end('stuid') + 1:].split('-')[0]
     # my = parse_subject.year.search(subject)
     # if m is not None and my is not None:
     #     if my.end('year') < m.end('stuid'):
@@ -94,7 +94,7 @@ class Homework():
 {comment}
 此邮件为提交作业成功确认函，请保留。
 
-祝学业进步！
+祝学业进步、新年快乐！
 
 齐飞
 --------
@@ -144,6 +144,7 @@ https://fredqi.me
         # In case this is a confirmation email
         if header['from'] == Homework.email_teacher:
             if 'in-reply-to' in header:
+                print(header['in-reply-to'])
                 self.replied.add(header['in-reply-to'])
             return
 
@@ -172,24 +173,21 @@ https://fredqi.me
 
     def save(self, body, attachments, overwrite=False):
         """Update homework and save attachments to disk."""
-        for fn, data in attachments:
-            sha256 = hashlib.sha256(data).hexdigest()
-            self.data[sha256] = (fn, data)
-
         # print(Homework.class_id, self.student_id)
         stu_path = os.path.join(Homework.class_id, self.student_id)
         # print(stu_path)
         if not os.path.exists(stu_path):
             os.mkdir(stu_path)
 
-        for key, value in self.data.items():
-            assert isinstance(value, tuple)
-            assert 2 == len(value)
-            fn, data = value
+        for fn, data in attachments:
+            sha256 = hashlib.sha256(data).hexdigest()
+            self.data[sha256] = fn
             filename = os.path.join(stu_path, fn)
             if overwrite or not os.path.exists(filename):
                 with open(filename, 'wb') as output_file:
                     output_file.write(data)
+                # checksum, _ = load_and_hash(filename)
+                # assert checksum == sha256
 
     def create_confirmation(self):
         """Create an email to reply for confirmation."""
@@ -205,8 +203,7 @@ https://fredqi.me
         fields = ['name', 'fromname', 'message-id']
         data = {key: self.info[key] for key in fields}
         exts, checksum = set(), list()
-        for sha, value in self.data.items():
-            fn, _ = value
+        for sha, fn in self.data.items():
             checksum.append(sha + ' ' + fn)
             _, ext = os.path.splitext(fn)
             exts.add(ext.lower())
@@ -216,10 +213,8 @@ https://fredqi.me
         has_source = len(exts & Homework.exts_sources) > 0
         has_doc = len(exts & Homework.exts_docs) > 0
         data['comment'] = '\n'
-        # if not has_source:
-        #     data['comment'] += u"\n！ 缺少程序代码文件。\n"
         if not has_doc:
-            data['comment'] += u"\n！ 缺少书面报告。\n"
+            data['comment'] += u"\n！ 缺少作业附件。\n"
 
         body = Homework.mail_template.format(**data)
         msg.attach(MIMEText(body, 'plain', 'utf-8'))
@@ -246,7 +241,7 @@ class HomeworkManager:
                  email_addr="fred.qi@ieee.org"):
         self.class_id = class_id  # Class ID
         self.homeworks = dict()
-        self.mail_label = 'work/teaching'
+        self.mail_label = '"[Gmail]/All Mail"'
 
         # Create a folder for the class
         if not os.path.exists(self.class_id):
@@ -309,15 +304,15 @@ def check_homeworks(download=True):
     mh.login(Homework.email_teacher, getpass.getpass())
 
     mgr = HomeworkManager(class_id)
-    # print(mgr.mail_label, mcond)
     email_uids = mh.search(mgr.mail_label, mcond)
     for euid in email_uids:
         header = mh.fetch_header(euid)
         logtxt = " ".join(["Processing", header['subject'],
                            "from", header['from']])
-        print(logtxt)
+        # print(logtxt)
         logfile.writelines(logtxt + '\n')
         student_id, _ = parse_subject(header['subject'])
+        print(student_id, header['from'], header.get('in-reply-to', '<>'))
         if student_id is None:
             continue
         if student_id not in mgr.homeworks:
@@ -325,7 +320,6 @@ def check_homeworks(download=True):
                 mgr.homeworks[student_id] = Homework(euid, header)
         else:
             email_uid_prev = mgr.homeworks[student_id].update(euid, header)
-            # print(email_uid_prev, student_id)
             if email_uid_prev is not None:
                 mh.mark_as_read(email_uid_prev)
 

@@ -31,6 +31,7 @@ class MailHelper:
 
     def search(self, folder, condition):
         self.imapclient.select(folder)
+        # print(self.imapclient.list())
 
         typ, data = self.imapclient.uid('search', None, condition)
         if 'OK' != typ:
