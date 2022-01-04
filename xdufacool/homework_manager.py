@@ -8,8 +8,8 @@
 # ----------------------------------------------------------------------
 # ## CHANGE LOG
 # ----------------------------------------------------------------------
-# Last-Updated: 2022-01-04 23:17:54(+0800) [by Fred Qi]
-#     Update #: 2027
+# Last-Updated: 2022-01-05 01:01:17(+0800) [by Fred Qi]
+#     Update #: 2043
 # ----------------------------------------------------------------------
 import re
 import os.path
@@ -22,6 +22,7 @@ from email.utils import formataddr
 from argparse import ArgumentParser
 from configparser import ConfigParser
 from configparser import ExtendedInterpolation
+from tqdm import tqdm
 
 from xdufacool.mail_helper import MailHelper
 
@@ -254,20 +255,19 @@ class HomeworkManager:
     def check_headers(self):
         """Fetch email headers."""
         email_uids = self.mail_helper.search(self.mail_label, self.conditions)
-        # if self.verbose:
-        #     from tqdm import tqdm
-        #     pbar = tqdm(total=len(email_uids))
+        if self.verbose:
+            pbar = tqdm(total=len(email_uids))
         logging.debug(f"{len(email_uids)} to be checked.")
         for euid in email_uids:
-            # if self.verbose:
-            #     pbar.set_description(euid)
-            #     pbar.update()
             header = self.mail_helper.fetch_header(euid)
             student_id, _ = parse_subject(header['subject'])
             if student_id is None:
                 logging.warning(f'{euid} {header["subject"]}')
                 continue            
             logging.info(f'{euid} {student_id}')
+            if self.verbose:
+                pbar.set_description(student_id)
+                pbar.update()
             if student_id not in self.homeworks:
                 if header['from'] != Homework.email_teacher:
                     self.homeworks[student_id] = Homework(euid, header)
@@ -280,14 +280,13 @@ class HomeworkManager:
 
     def send_confirmation(self):
         """Send confirmation to unreplied emails."""
-        # if self.verbose:
-        #     from tqdm import tqdm
-        #     pbar = tqdm(total=len(self.homeworks))
+        if self.verbose:
+            pbar = tqdm(total=len(self.homeworks))
         logging.debug(f"{len(self.homeworks)} to be processed.")
         for student_id, hw in self.homeworks.items():
-            # if self.verbose:
-            #     pbar.set_description(student_id)
-            #     pbar.update()
+            if self.verbose:
+                pbar.set_description(student_id)
+                pbar.update()
             if not hw.is_confirmed():
                 body, attachments = self.mail_helper.fetch_email(hw.latest_email_uid)
                 hw.save(body, attachments)
@@ -348,6 +347,11 @@ def parse_cmd():
     return (args.class_id, mcond, args.test)
 
 
+def print_and_log(msg):
+    logging.info(msg)
+    print(msg)
+    
+
 def parse_config():
     desc = "To check and download homeworks from an IMAP server."
     parser = ArgumentParser(description=desc)
@@ -369,11 +373,13 @@ def check_homeworks():
     for config in parse_config():
         if not os.path.exists(config):
             continue
-        logging.info(f'Loading {config}...')
+        print_and_log('* Loading {config}...')
         mgr = HomeworkManager(config)
-        logging.info('Checking email headers...')
+
+        print_and_log('* Checking email headers...')
         mgr.check_headers()
-        logging.info('Sending confirmation emails...')
+        
+        print_and_log('* Sending confirmation emails...')
         mgr.send_confirmation()
         mgr.quit()
 

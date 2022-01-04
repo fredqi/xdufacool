@@ -41,6 +41,7 @@ def setup_package():
                     license=LICENSE,
                     url=URL,
                     packages=find_packages(include=('xdufacool',)),
+                    install_requires=['tqdm'],
                     # scripts
                     entry_points={'console_scripts':
                                       ['xdufacool = xdufacool.homework_manager:check_homeworks',
