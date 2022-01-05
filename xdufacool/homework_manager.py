@@ -8,8 +8,8 @@
 # ----------------------------------------------------------------------
 # ## CHANGE LOG
 # ----------------------------------------------------------------------
-# Last-Updated: 2022-01-05 01:01:17(+0800) [by Fred Qi]
-#     Update #: 2043
+# Last-Updated: 2022-01-05 13:55:31(+0800) [by Fred Qi]
+#     Update #: 2069
 # ----------------------------------------------------------------------
 import re
 import os.path
@@ -22,8 +22,8 @@ from email.utils import formataddr
 from argparse import ArgumentParser
 from configparser import ConfigParser
 from configparser import ExtendedInterpolation
-from tqdm import tqdm
 
+from xdufacool.utils import setup_logging
 from xdufacool.mail_helper import MailHelper
 
 
@@ -255,19 +255,14 @@ class HomeworkManager:
     def check_headers(self):
         """Fetch email headers."""
         email_uids = self.mail_helper.search(self.mail_label, self.conditions)
-        if self.verbose:
-            pbar = tqdm(total=len(email_uids))
         logging.debug(f"{len(email_uids)} to be checked.")
         for euid in email_uids:
             header = self.mail_helper.fetch_header(euid)
             student_id, _ = parse_subject(header['subject'])
             if student_id is None:
-                logging.warning(f'{euid} {header["subject"]}')
+                logging.warning(f'{euid} {header["subject"]} {header["time"]}')
                 continue            
-            logging.info(f'{euid} {student_id}')
-            if self.verbose:
-                pbar.set_description(student_id)
-                pbar.update()
+            logging.debug(f'{euid} {header["subject"]}')
             if student_id not in self.homeworks:
                 if header['from'] != Homework.email_teacher:
                     self.homeworks[student_id] = Homework(euid, header)
@@ -280,27 +275,22 @@ class HomeworkManager:
 
     def send_confirmation(self):
         """Send confirmation to unreplied emails."""
-        if self.verbose:
-            pbar = tqdm(total=len(self.homeworks))
         logging.debug(f"{len(self.homeworks)} to be processed.")
         for student_id, hw in self.homeworks.items():
-            if self.verbose:
-                pbar.set_description(student_id)
-                pbar.update()
             if not hw.is_confirmed():
                 body, attachments = self.mail_helper.fetch_email(hw.latest_email_uid)
                 hw.save(body, attachments)
                 self.mail_helper.flag(hw.latest_email_uid, ['Seen'])
-                logging.info(f"{student_id} downloaded.")
+                logging.debug(f"{hw.info['subject']} downloaded.")
                 to_addr, msg = hw.create_confirmation()
                 if not self.testing:
                     self.mail_helper.send_email(Homework.email_teacher, to_addr, msg)
                     self.mail_helper.flag(hw.latest_email_uid, ['Answered'])
-                    logging.info(f"{student_id} confirmed.")
+                    logging.debug(f"{hw.info['subject']} confirmed.")
             elif self.download:
                 body, attachments = self.mail_helper.fetch_email(hw.latest_email_uid)
                 hw.save(body, attachments)
-                logging.info(f"{student_id} downloaded.")
+                logging.debug(f"{hw.info['subject']} downloaded.")
 
     def quit(self):
         self.mail_helper.quit()
@@ -347,11 +337,6 @@ def parse_cmd():
     return (args.class_id, mcond, args.test)
 
 
-def print_and_log(msg):
-    logging.info(msg)
-    print(msg)
-    
-
 def parse_config():
     desc = "To check and download homeworks from an IMAP server."
     parser = ArgumentParser(description=desc)
@@ -362,25 +347,23 @@ def parse_config():
 
 
 def check_homeworks():
-    formatter = {'fmt': '%(asctime)s, %(levelname)-8s, %(message)s',
-                 'datefmt': '%Y-%m-%d %H:%M:%S'}
-    logging.basicConfig(filename='xdufacool.log',
-                        format=formatter['fmt'],
-                        datefmt=formatter['datefmt'],
-                        level=logging.DEBUG)
+    setup_logging('xdufacool.log', logging.DEBUG)
     Homework.init_static("", "")
 
     for config in parse_config():
         if not os.path.exists(config):
             continue
-        print_and_log('* Loading {config}...')
+
+        logging.info(f'* Loading {config}...')
         mgr = HomeworkManager(config)
 
-        print_and_log('* Checking email headers...')
+        logging.info('* Checking email headers...')
         mgr.check_headers()
         
-        print_and_log('* Sending confirmation emails...')
+        logging.info('* Sending confirmation emails...')
         mgr.send_confirmation()
+
+        logging.info('* Logout email servers...')
         mgr.quit()
 
 # ----------------------------------------------------------------------
