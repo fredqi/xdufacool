@@ -8,10 +8,11 @@
 # ----------------------------------------------------------------------
 # ## CHANGE LOG
 # ----------------------------------------------------------------------
-# Last-Updated: 2022-01-05 13:55:31(+0800) [by Fred Qi]
-#     Update #: 2069
+# Last-Updated: 2022-01-05 19:34:01(+0800) [by Fred Qi]
+#     Update #: 2112
 # ----------------------------------------------------------------------
 import re
+import sys
 import os.path
 import hashlib
 import logging
@@ -260,7 +261,7 @@ class HomeworkManager:
             header = self.mail_helper.fetch_header(euid)
             student_id, _ = parse_subject(header['subject'])
             if student_id is None:
-                logging.warning(f'{euid} {header["subject"]} {header["time"]}')
+                logging.warning(f'{euid} {header["subject"]} {header["date"]}')
                 continue            
             logging.debug(f'{euid} {header["subject"]}')
             if student_id not in self.homeworks:
@@ -352,16 +353,29 @@ def check_homeworks():
 
     for config in parse_config():
         if not os.path.exists(config):
+            logging.error(f"{config} does not exist.")
             continue
-
-        logging.info(f'* Loading {config}...')
-        mgr = HomeworkManager(config)
-
-        logging.info('* Checking email headers...')
-        mgr.check_headers()
-        
-        logging.info('* Sending confirmation emails...')
-        mgr.send_confirmation()
+        try:
+            logging.info(f'* Loading {config}...')
+            mgr = HomeworkManager(config)
+        except TimeoutError as error:
+            logging.error(f"TimeoutError: {error.strerror} when connecting to email server.")
+            sys.exit(error.errno)
+        except KeyboardInterrupt:
+            logging.error("KeyboardInterrupt: Interrupted by user from keyword.")
+            sys.exit(1)
+            
+        try:
+            logging.info('* Checking email headers...')
+            mgr.check_headers()
+            logging.info('* Sending confirmation emails...')
+            mgr.send_confirmation()
+        except KeyboardInterrupt as error:
+            logging.error(f"{type(error)}: {error.strerror}")
+        except ConnectionResetError as error:
+            logging.error(f"{error}: {type(error)}")
+        except Exception as error:
+            logging.error(f"{type(error)}: {error.strerror} {error.message} {error.description}")
 
         logging.info('* Logout email servers...')
         mgr.quit()

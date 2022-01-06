@@ -11,7 +11,7 @@ services:
   xdufacool:
     build: .
     image: fredqi/xdufacool:latest
-    entrypoint: ["cron", "-f", "-l", "2"]
+    entrypoint: ["cron", "-f"]
     container_name: xdufacool
     volumes:
       - '/home/data/homeworks:/data'
