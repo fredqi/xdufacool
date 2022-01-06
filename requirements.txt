@@ -1,4 +1,5 @@
 tqdm
-pyyaml
+PySocks
+PyYAML
 pdf2image
 bibtexparser

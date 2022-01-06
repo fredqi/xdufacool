@@ -9,7 +9,7 @@ RUN apt-get update -qq && \
     rm -r /var/lib/apt/lists/*
 
 RUN python3 -m pip install --upgrade pip && \
-    pip install pysocks https://github.com/fredqi/xdufacool/archive/master.zip
+    pip install https://github.com/fredqi/xdufacool/archive/master.zip
 
 COPY crontab /etc/cron.d/xdufacool
 RUN chmod 0644 /etc/cron.d/xdufacool &&\

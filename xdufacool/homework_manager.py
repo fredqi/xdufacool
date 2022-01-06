@@ -8,8 +8,8 @@
 # ----------------------------------------------------------------------
 # ## CHANGE LOG
 # ----------------------------------------------------------------------
-# Last-Updated: 2022-01-05 19:34:01(+0800) [by Fred Qi]
-#     Update #: 2112
+# Last-Updated: 2022-01-06 19:01:55(+0800) [by Fred Qi]
+#     Update #: 2138
 # ----------------------------------------------------------------------
 import re
 import sys
@@ -221,37 +221,46 @@ class HomeworkManager:
 
     def __init__(self, configfile):
         """Initialize the class from the config file."""
-        self.homeworks  = dict()
+        self.homeworks = {}
+        self.submissions  = dict()
         self.verbose    = True
         self.mail_label = '"[Gmail]/All Mail"'
         
         config = ConfigParser(interpolation=ExtendedInterpolation())
         config.read(configfile)
 
+        cfg_general = config['general']
+        homeworks = cfg_general['homeworks'].split(',')
+        hw_key = f"homework_{homeworks[0]}"
         # Setup folder and search conditions for attachments
-        self.download = config['homework'].getboolean('download')
-        self.folder = config['homework']['folder']
-        self.conditions = config['homework']['conditions']
+        self.download = config[hw_key].getboolean('download')
+        self.folder = config[hw_key]['folder']
+        self.conditions = config[hw_key]['conditions']
         logging.debug(f"search conditions = {self.conditions}")
         if not os.path.exists(self.folder):
             os.mkdir(self.folder)
 
         # Setup the mail_helper
-        email_sec = config['email']
-        self.testing = email_sec.getboolean('testing')
+        cfg_email = config['email']
+        self.testing = config['general'].getboolean('testing')
         logging.debug(f"testing mode = {self.testing}")
+        proxy = None
+        if 'proxy_ip' in cfg_general:
+            proxy = cfg_general['proxy_ip'], cfg_general.getint('proxy_port')
         if self.testing:
-            self.mail_helper = MailHelper(email_sec['imap_server'])
+            self.mail_helper = MailHelper(cfg_email['imap_server'],
+                                          proxy=proxy)
         else:
-            self.mail_helper = MailHelper(email_sec['imap_server'],
-                                          email_sec['smtp_server'])
-        Homework.homework_id = config['homework']['homework-id']
-        Homework.folder = config['homework']['folder']
+            self.mail_helper = MailHelper(cfg_email['imap_server'],
+                                          cfg_email['smtp_server'],
+                                          proxy=proxy)
+        Homework.homework_id = config[hw_key]['homework-id']
+        Homework.folder = config[hw_key]['folder']
         Homework.name_teacher = config['teacher']['name']
-        Homework.email_teacher = email_sec['address']
-        Homework.mail_template = email_sec['template']
+        Homework.email_teacher = cfg_email['address']
+        Homework.mail_template = cfg_email['template']
         # print(Homework.mail_template)
-        self.mail_helper.login(Homework.email_teacher, email_sec['password'])
+        self.mail_helper.login(Homework.email_teacher, cfg_email['password'])
 
     def check_headers(self):
         """Fetch email headers."""
@@ -264,20 +273,20 @@ class HomeworkManager:
                 logging.warning(f'{euid} {header["subject"]} {header["date"]}')
                 continue            
             logging.debug(f'{euid} {header["subject"]}')
-            if student_id not in self.homeworks:
+            if student_id not in self.submissions:
                 if header['from'] != Homework.email_teacher:
-                    self.homeworks[student_id] = Homework(euid, header)
+                    self.submissions[student_id] = Homework(euid, header)
                     # self.mail_helper.unflag(euid, ['Seen'])
             else:
-                euid_prev = self.homeworks[student_id].update(euid, header)
+                euid_prev = self.submissions[student_id].update(euid, header)
                 if euid_prev:
                     self.mail_helper.flag(euid_prev, ['Seen', 'Answered'])
                     logging.debug(f"Flagged {euid_prev} {student_id} as answered.")
 
     def send_confirmation(self):
         """Send confirmation to unreplied emails."""
-        logging.debug(f"{len(self.homeworks)} to be processed.")
-        for student_id, hw in self.homeworks.items():
+        logging.debug(f"{len(self.submissions)} to be processed.")
+        for student_id, hw in self.submissions.items():
             if not hw.is_confirmed():
                 body, attachments = self.mail_helper.fetch_email(hw.latest_email_uid)
                 hw.save(body, attachments)

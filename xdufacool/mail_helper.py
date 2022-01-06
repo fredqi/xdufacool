@@ -1,4 +1,6 @@
 import datetime
+import socks
+import socket
 import email
 import imaplib
 import smtplib
@@ -12,8 +14,13 @@ class MailHelper:
 
     _fields = ["SUBJECT", "FROM", "DATE", "TO", "MESSAGE-ID", "IN-REPLY-TO"]
 
-    def __init__(self, imapserver, smtpserver=None):
+    def __init__(self, imapserver, smtpserver=None, proxy=None):
         self._flags = set(["Seen", "Answered", "Flagged"])
+        if proxy:
+            proxy_ip, proxy_port = proxy
+            socks.setdefaultproxy(socks.SOCKS5, proxy_ip, proxy_port)
+            socket.socket = socks.socksocket
+
         self.imapclient = imaplib.IMAP4_SSL(imapserver)
         self.smtpclient = None
         if isinstance(smtpserver, str):
