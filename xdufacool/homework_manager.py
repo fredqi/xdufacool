@@ -8,8 +8,8 @@
 # ----------------------------------------------------------------------
 # ## CHANGE LOG
 # ----------------------------------------------------------------------
-# Last-Updated: 2022-01-06 19:01:55(+0800) [by Fred Qi]
-#     Update #: 2138
+# Last-Updated: 2022-01-06 22:22:59(+0800) [by Fred Qi]
+#     Update #: 2329
 # ----------------------------------------------------------------------
 import re
 import sys
@@ -66,32 +66,17 @@ def parse_subject(subject):
 
 class Homework():
     """A class to represent the homework from a student."""
-    homework_id = None
-    class_id = None
-    email_teacher = None
-    name_teacher = None
-
-    mail_template = None
     # file types by extentions
     exts_sources = None
     exts_docs = None
 
-    @staticmethod
-    def init_static(name_teacher, email_teacher,
-                    homework_id="HW0000", class_id="0" * 7):
-        Homework.homework_id = homework_id
-        Homework.class_id = class_id
-        Homework.folder = homework_id
-        Homework.email_teacher = email_teacher
-        Homework.name_teacher = name_teacher
+    name_teacher = None
+    email_teacher = None
+    mail_template = None
 
-        Homework.mail_template = u"""{name}({fromname})：
-email {message-id}
-SHA256 of attachments:
-{checksum}
-{comment}
-<footer>
-"""
+    @staticmethod
+    def init_static(name, email, template):
+        """Initialize static (shared) variables across all homework submissions."""
         exts_zip = ['.zip', '.tar.gz', '.tar', '.xz', '.7z', '.rar']
         exts = ['.c', '.cpp', '.m', '.py']
         Homework.exts_sources = set(exts + exts_zip)
@@ -100,6 +85,40 @@ SHA256 of attachments:
                 '.htm', '.html', '.md', '.tex']
         Homework.exts_docs = set(exts + exts_zip)
 
+        Homework.name_teacher = name
+        Homework.email_teacher = email
+
+        # template of the confirmation email
+        # keys to reference variables:
+        # name: name of the student parsed from email title
+        # fromname: name specified in the email header
+        # message-id: email unique id
+        # checksum: SHA256 hash codes of attachments
+        # comment: to reply incorrect submissions
+        Homework.mail_template = template
+
+    def __init__(self, batch=False, **kwargs):
+        """Initialize homework with a given dict."""
+        for key, value in kwargs.items():
+            setattr(self, key, value)
+
+        if not hasattr(self, 'folder'):
+            self.folder = f"{self.subject}-{self.homework_id}"
+        if not os.path.exists(self.folder):
+            os.mkdir(self.folder)
+
+        if not hasattr(self, 'conditions'):
+            mconds = []
+            if hasattr(self, 'subject'):
+                mconds.append(f'SUBJECT {self.subject}')
+            if hasattr(self, 'date_after'):
+                mconds.append(f'SINCE {self.date_after}')
+            if not batch:
+                mconds.append(f'TO {Homework.email_teacher} UNANSWERED')
+            self.conditions = ' '.join(mconds)
+
+
+class Submission():
     def __init__(self, email_uid, header):
         """Initialize a homework instance."""
 
@@ -229,78 +248,66 @@ class HomeworkManager:
         config = ConfigParser(interpolation=ExtendedInterpolation())
         config.read(configfile)
 
-        cfg_general = config['general']
-        homeworks = cfg_general['homeworks'].split(',')
-        hw_key = f"homework_{homeworks[0]}"
-        # Setup folder and search conditions for attachments
-        self.download = config[hw_key].getboolean('download')
-        self.folder = config[hw_key]['folder']
-        self.conditions = config[hw_key]['conditions']
-        logging.debug(f"search conditions = {self.conditions}")
-        if not os.path.exists(self.folder):
-            os.mkdir(self.folder)
-
+        cfg_general, cfg_email = config['general'], config['email']
+        Homework.init_static(config['teacher']['name'],
+                             cfg_email['address'], cfg_email['template'])
+        for hw_key in cfg_general['homeworks'].split(','):
+            hw_key = hw_key.strip()
+            cfg_homework = config[f"homework_{hw_key}"]
+            self.homeworks[hw_key] = Homework(**cfg_homework)
         # Setup the mail_helper
-        cfg_email = config['email']
-        self.testing = config['general'].getboolean('testing')
-        logging.debug(f"testing mode = {self.testing}")
+        self.testing = cfg_general.getboolean('testing')
+        logging.debug(f"  testing mode = {self.testing}")
         proxy = None
         if 'proxy_ip' in cfg_general:
             proxy = cfg_general['proxy_ip'], cfg_general.getint('proxy_port')
+        imap_server, smtp_server = cfg_email['imap_server'], cfg_email['smtp_server']
         if self.testing:
-            self.mail_helper = MailHelper(cfg_email['imap_server'],
-                                          proxy=proxy)
+            self.mail_helper = MailHelper(imap_server, proxy=proxy)
         else:
-            self.mail_helper = MailHelper(cfg_email['imap_server'],
-                                          cfg_email['smtp_server'],
+            self.mail_helper = MailHelper(imap_server, smtp_server,
                                           proxy=proxy)
-        Homework.homework_id = config[hw_key]['homework-id']
-        Homework.folder = config[hw_key]['folder']
-        Homework.name_teacher = config['teacher']['name']
-        Homework.email_teacher = cfg_email['address']
-        Homework.mail_template = cfg_email['template']
-        # print(Homework.mail_template)
         self.mail_helper.login(Homework.email_teacher, cfg_email['password'])
 
-    def check_headers(self):
+    def check_headers(self, homework):
         """Fetch email headers."""
-        email_uids = self.mail_helper.search(self.mail_label, self.conditions)
-        logging.debug(f"{len(email_uids)} to be checked.")
+        logging.debug(f"  search conditions = {homework.conditions}")
+        email_uids = self.mail_helper.search(self.mail_label, homework.conditions)
+        logging.debug(f"  {len(email_uids)} emails to be checked.")
         for euid in email_uids:
             header = self.mail_helper.fetch_header(euid)
             student_id, _ = parse_subject(header['subject'])
             if student_id is None:
-                logging.warning(f'{euid} {header["subject"]} {header["date"]}')
+                logging.warning(f'  {euid} {header["subject"]} {header["date"]}')
                 continue            
-            logging.debug(f'{euid} {header["subject"]}')
+            logging.debug(f'  {euid} {header["subject"]}')
             if student_id not in self.submissions:
                 if header['from'] != Homework.email_teacher:
-                    self.submissions[student_id] = Homework(euid, header)
-                    # self.mail_helper.unflag(euid, ['Seen'])
+                    self.submissions[student_id] = Submission(euid, header)
             else:
                 euid_prev = self.submissions[student_id].update(euid, header)
                 if euid_prev:
                     self.mail_helper.flag(euid_prev, ['Seen', 'Answered'])
-                    logging.debug(f"Flagged {euid_prev} {student_id} as answered.")
+                    logging.debug(f"  Flagged {euid_prev} {student_id} as answered.")
 
-    def send_confirmation(self):
+    def send_confirmation(self, homework):
         """Send confirmation to unreplied emails."""
-        logging.debug(f"{len(self.submissions)} to be processed.")
+        logging.debug(f"  {len(self.submissions)} emails to be processed.")
         for student_id, hw in self.submissions.items():
             if not hw.is_confirmed():
                 body, attachments = self.mail_helper.fetch_email(hw.latest_email_uid)
                 hw.save(body, attachments)
                 self.mail_helper.flag(hw.latest_email_uid, ['Seen'])
-                logging.debug(f"{hw.info['subject']} downloaded.")
+                logging.debug(f"  {hw.info['subject']} submissions downloaded.")
                 to_addr, msg = hw.create_confirmation()
                 if not self.testing:
                     self.mail_helper.send_email(Homework.email_teacher, to_addr, msg)
                     self.mail_helper.flag(hw.latest_email_uid, ['Answered'])
-                    logging.debug(f"{hw.info['subject']} confirmed.")
-            elif self.download:
+                    logging.debug(f"  {hw.info['subject']} emails confirmed.")
+            elif homework.download:
                 body, attachments = self.mail_helper.fetch_email(hw.latest_email_uid)
                 hw.save(body, attachments)
-                logging.debug(f"{hw.info['subject']} downloaded.")
+                logging.debug(f"  {hw.info['subject']} downloaded.")
 
     def quit(self):
         self.mail_helper.quit()
@@ -350,44 +357,48 @@ def parse_cmd():
 def parse_config():
     desc = "To check and download homeworks from an IMAP server."
     parser = ArgumentParser(description=desc)
-    parser.add_argument('config', metavar='config',
-                        nargs='+', help="Config of homeworks.")
+    parser.add_argument('config', metavar='config', type=str,
+                        help="Config of homeworks.")
     args = parser.parse_args()
     return args.config
 
 
 def check_homeworks():
     setup_logging('xdufacool.log', logging.DEBUG)
-    Homework.init_static("", "")
 
-    for config in parse_config():
-        if not os.path.exists(config):
-            logging.error(f"{config} does not exist.")
-            continue
-        try:
-            logging.info(f'* Loading {config}...')
-            mgr = HomeworkManager(config)
-        except TimeoutError as error:
-            logging.error(f"TimeoutError: {error.strerror} when connecting to email server.")
-            sys.exit(error.errno)
-        except KeyboardInterrupt:
-            logging.error("KeyboardInterrupt: Interrupted by user from keyword.")
-            sys.exit(1)
-            
-        try:
-            logging.info('* Checking email headers...')
-            mgr.check_headers()
-            logging.info('* Sending confirmation emails...')
-            mgr.send_confirmation()
-        except KeyboardInterrupt as error:
-            logging.error(f"{type(error)}: {error.strerror}")
-        except ConnectionResetError as error:
-            logging.error(f"{error}: {type(error)}")
-        except Exception as error:
-            logging.error(f"{type(error)}: {error.strerror} {error.message} {error.description}")
+    config = parse_config()
+    if not os.path.exists(config):
+        logging.error(f"  {config} does not exist.")
+        sys.exit(1)
+        
+    try:
+        logging.info(f'* Loading {config}...')
+        mgr = HomeworkManager(config)
+    except TimeoutError as error:
+        logging.error(f"TimeoutError: {error.strerror} when connecting to email server.")
+        sys.exit(error.errno)
+    except AttributeError as error:
+        logging.error(f"AttributeError: {error}.")
+        sys.exit(1)
+    except KeyboardInterrupt:
+        logging.error("KeyboardInterrupt: Interrupted by user from keyword.")
+        sys.exit(1)
+        
+    try:
+        for hw_key, homework in mgr.homeworks.items():
+            logging.info(f'* [{hw_key}] Checking email headers...')
+            mgr.check_headers(homework)
+            logging.info(f'* [{hw_key}] Sending confirmation emails...')
+            mgr.send_confirmation(homework)
+    except KeyboardInterrupt as error:
+        logging.error(f"{type(error)}: {error.strerror}")
+    except ConnectionResetError as error:
+        logging.error(f"{error}: {type(error)}")
+    except Exception as error:
+        logging.error(f"{type(error)}: {error}")
 
-        logging.info('* Logout email servers...')
-        mgr.quit()
+    logging.info('* Logout email servers...')
+    mgr.quit()
 
 # ----------------------------------------------------------------------
 # END OF FILE

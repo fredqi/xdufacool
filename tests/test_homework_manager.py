@@ -4,6 +4,7 @@ import os
 from unittest import TestCase
 
 from xdufacool.homework_manager import Homework
+from xdufacool.homework_manager import Submission
 from xdufacool.homework_manager import HomeworkManager
 from xdufacool.homework_manager import load_and_hash
 from xdufacool.homework_manager import parse_subject
@@ -45,12 +46,12 @@ class TestHomework(TestCase):
         self.header["message-id"] = "<tencent_14F8ED440FB998C26AE759BB@qq.com>"
 
     def test_initialize(self):
-        hw = Homework(1000, self.header)
+        hw = Submission(1000, self.header)
         self.assertEqual(hw.student_id, "14020150099",
                          "Homework.student_id is wrong. " + hw.student_id)
 
     def test_check_local(self):
-        hw = Homework(1000, self.header)
+        hw = Submission(1000, self.header)
         hw.check_local("tests/1402015")
         sha01 = "ccd40fb582c2043cc117ff7e738c2ca6d88a29d477c8fec32811b238c4c8c198"
         self.assertIn(sha01, hw.data)
