@@ -8,8 +8,8 @@
 # ----------------------------------------------------------------------
 # ## CHANGE LOG
 # ----------------------------------------------------------------------
-# Last-Updated: 2022-01-06 22:22:59(+0800) [by Fred Qi]
-#     Update #: 2329
+# Last-Updated: 2022-01-15 12:58:31(+0800) [by Fred Qi]
+#     Update #: 2332
 # ----------------------------------------------------------------------
 import re
 import sys
@@ -179,9 +179,9 @@ class Submission():
             self.info['time'] = MailHelper.get_datetime(header['date'])
         return email_uid_prev
 
-    def save(self, body, attachments, overwrite=False):
+    def save(self, body, attachments, homework, overwrite=False):
         """Update homework and save attachments to disk."""
-        stu_path = os.path.join(Homework.folder, self.student_id)
+        stu_path = os.path.join(homework.folder, self.student_id)
         if not os.path.exists(stu_path):
             os.mkdir(stu_path)
 
@@ -296,7 +296,7 @@ class HomeworkManager:
         for student_id, hw in self.submissions.items():
             if not hw.is_confirmed():
                 body, attachments = self.mail_helper.fetch_email(hw.latest_email_uid)
-                hw.save(body, attachments)
+                hw.save(body, attachments, homework)
                 self.mail_helper.flag(hw.latest_email_uid, ['Seen'])
                 logging.debug(f"  {hw.info['subject']} submissions downloaded.")
                 to_addr, msg = hw.create_confirmation()
