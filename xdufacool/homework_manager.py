@@ -8,8 +8,8 @@
 # ----------------------------------------------------------------------
 # ## CHANGE LOG
 # ----------------------------------------------------------------------
-# Last-Updated: 2022-01-15 12:58:31(+0800) [by Fred Qi]
-#     Update #: 2332
+# Last-Updated: 2022-05-12 14:12:56(+0800) [by Fred Qi]
+#     Update #: 2334
 # ----------------------------------------------------------------------
 import re
 import sys
@@ -102,15 +102,16 @@ class Homework():
         for key, value in kwargs.items():
             setattr(self, key, value)
 
+        homework_descriptor = f"{self.subject}-{self.homework_id}"
         if not hasattr(self, 'folder'):
-            self.folder = f"{self.subject}-{self.homework_id}"
+            self.folder = homework_descriptor
         if not os.path.exists(self.folder):
             os.mkdir(self.folder)
 
         if not hasattr(self, 'conditions'):
             mconds = []
             if hasattr(self, 'subject'):
-                mconds.append(f'SUBJECT {self.subject}')
+                mconds.append(f'SUBJECT {homework_descriptor}')
             if hasattr(self, 'date_after'):
                 mconds.append(f'SINCE {self.date_after}')
             if not batch:
