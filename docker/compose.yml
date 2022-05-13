@@ -10,7 +10,7 @@ networks:
 services:
   xdufacool:
     build: .
-    image: fredqi/xdufacool:latest
+    image: ghcr.io/fredqi/xdufacool:latest
     entrypoint: ["cron", "-f"]
     container_name: xdufacool
     volumes:
