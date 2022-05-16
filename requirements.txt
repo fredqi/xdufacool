@@ -4,5 +4,6 @@ PyYAML
 xlrd
 xlwt
 click
+numpy
 pdf2image
 bibtexparser
