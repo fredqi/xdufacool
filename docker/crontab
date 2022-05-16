@@ -2,4 +2,4 @@ SHELL=/bin/bash
 PATH=/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
 
 # *  *  *  *  * user-name command to be executed
-31 */2 * * *	root      cd /data && /usr/local/bin/xdufacool homeworks.ini > /proc/1/fd/1
+31 */2 * * *	root      . /opt/venv/bin/activate && cd /data && xdufacool homeworks.ini > /proc/1/fd/1

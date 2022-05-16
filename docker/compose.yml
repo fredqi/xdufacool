@@ -11,8 +11,9 @@ services:
   xdufacool:
     build: .
     image: ghcr.io/fredqi/xdufacool:latest
-    entrypoint: ["cron", "-f"]
+    entrypoint: ["/usr/sbin/cron", "-f"]
+    # ["/bin/bash", "-l", "-c", "find /usr -type f -name cron"]
     container_name: xdufacool
     volumes:
-      - '/home/data/homeworks:/data'
+      - /home/data/homeworks:/data
 
