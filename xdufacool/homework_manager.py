@@ -8,8 +8,8 @@
 # ----------------------------------------------------------------------
 # ## CHANGE LOG
 # ----------------------------------------------------------------------
-# Last-Updated: 2022-05-12 14:12:56(+0800) [by Fred Qi]
-#     Update #: 2334
+# Last-Updated: 2022-05-16 10:43:00(+0800) [by Fred Qi]
+#     Update #: 2386
 # ----------------------------------------------------------------------
 import re
 import sys
@@ -102,20 +102,23 @@ class Homework():
         for key, value in kwargs.items():
             setattr(self, key, value)
 
-        homework_descriptor = f"{self.subject}-{self.homework_id}"
-        if not hasattr(self, 'folder'):
-            self.folder = homework_descriptor
-        if not os.path.exists(self.folder):
-            os.mkdir(self.folder)
+        
+        if not hasattr(self, 'descriptor'):
+            desc = f'{self.subject}-{self.homework_id}'
+            self.descriptor = desc
+        if not os.path.exists(self.descriptor):
+            os.mkdir(self.descriptor)
 
         if not hasattr(self, 'conditions'):
             mconds = []
-            if hasattr(self, 'subject'):
-                mconds.append(f'SUBJECT {homework_descriptor}')
+            if hasattr(self, 'descriptor'):
+                mconds.append(f'SUBJECT "{self.descriptor}"')
+            elif hasattr(self, 'subject'):
+                mconds.append(f'SUBJECT "{self.subject}"')
             if hasattr(self, 'date_after'):
                 mconds.append(f'SINCE {self.date_after}')
             if not batch:
-                mconds.append(f'TO {Homework.email_teacher} UNANSWERED')
+                mconds.append(f'TO {Homework.email_teacher} Unanswered')
             self.conditions = ' '.join(mconds)
 
 
@@ -182,7 +185,7 @@ class Submission():
 
     def save(self, body, attachments, homework, overwrite=False):
         """Update homework and save attachments to disk."""
-        stu_path = os.path.join(homework.folder, self.student_id)
+        stu_path = os.path.join(homework.descriptor, self.student_id)
         if not os.path.exists(stu_path):
             os.mkdir(stu_path)
 
@@ -272,9 +275,10 @@ class HomeworkManager:
 
     def check_headers(self, homework):
         """Fetch email headers."""
-        logging.debug(f"  search conditions = {homework.conditions}")
+        logging.debug(f"  Search {homework.conditions}")
         email_uids = self.mail_helper.search(self.mail_label, homework.conditions)
-        logging.debug(f"  {len(email_uids)} emails to be checked.")
+        logging.debug(f"    {len(email_uids)} emails to be checked.")
+        submissions = self.submissions.get(homework.descriptor, {})
         for euid in email_uids:
             header = self.mail_helper.fetch_header(euid)
             student_id, _ = parse_subject(header['subject'])
@@ -282,33 +286,32 @@ class HomeworkManager:
                 logging.warning(f'  {euid} {header["subject"]} {header["date"]}')
                 continue            
             logging.debug(f'  {euid} {header["subject"]}')
-            if student_id not in self.submissions:
+            if student_id not in submissions:
                 if header['from'] != Homework.email_teacher:
-                    self.submissions[student_id] = Submission(euid, header)
+                    submissions[student_id] = Submission(euid, header)
             else:
-                euid_prev = self.submissions[student_id].update(euid, header)
+                euid_prev = submissions[student_id].update(euid, header)
                 if euid_prev:
                     self.mail_helper.flag(euid_prev, ['Seen', 'Answered'])
                     logging.debug(f"  Flagged {euid_prev} {student_id} as answered.")
+        self.submissions[homework.descriptor] = submissions
 
     def send_confirmation(self, homework):
         """Send confirmation to unreplied emails."""
-        logging.debug(f"  {len(self.submissions)} emails to be processed.")
-        for student_id, hw in self.submissions.items():
-            if not hw.is_confirmed():
+        submissions = self.submissions.get(homework.descriptor, {})
+        logging.debug(f"    {len(submissions)} confirmations to be sent.")
+        for student_id, hw in submissions.items():
+            if homework.download:
                 body, attachments = self.mail_helper.fetch_email(hw.latest_email_uid)
                 hw.save(body, attachments, homework)
-                self.mail_helper.flag(hw.latest_email_uid, ['Seen'])
-                logging.debug(f"  {hw.info['subject']} submissions downloaded.")
-                to_addr, msg = hw.create_confirmation()
-                if not self.testing:
-                    self.mail_helper.send_email(Homework.email_teacher, to_addr, msg)
-                    self.mail_helper.flag(hw.latest_email_uid, ['Answered'])
-                    logging.debug(f"  {hw.info['subject']} emails confirmed.")
-            elif homework.download:
-                body, attachments = self.mail_helper.fetch_email(hw.latest_email_uid)
-                hw.save(body, attachments)
                 logging.debug(f"  {hw.info['subject']} downloaded.")
+            if not hw.is_confirmed():
+                self.mail_helper.flag(hw.latest_email_uid, ['Unseen', 'Unanswered'])
+                if not self.testing:
+                    to_addr, msg = hw.create_confirmation()
+                    self.mail_helper.send_email(Homework.email_teacher, to_addr, msg)
+                    self.mail_helper.flag(hw.latest_email_uid, ['Seen', 'Answered'])
+                    logging.debug(f"  {hw.info['subject']} emails confirmed.")
 
     def quit(self):
         self.mail_helper.quit()
@@ -387,9 +390,9 @@ def check_homeworks():
         
     try:
         for hw_key, homework in mgr.homeworks.items():
-            logging.info(f'* [{hw_key}] Checking email headers...')
+            logging.info(f'* [{homework.descriptor}] Checking email headers...')
             mgr.check_headers(homework)
-            logging.info(f'* [{hw_key}] Sending confirmation emails...')
+            logging.info(f'* [{homework.descriptor}] Sending confirmation emails...')
             mgr.send_confirmation(homework)
     except KeyboardInterrupt as error:
         logging.error(f"{type(error)}: {error.strerror}")
