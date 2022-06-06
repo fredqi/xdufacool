@@ -1,5 +1,7 @@
 SHELL=/bin/bash
 PATH=/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
+CRON_TZ=Asia/Shanghai
 
 # *  *  *  *  * user-name command to be executed
-31 */2 * * *	root      . /opt/venv/bin/activate && cd /data && xdufacool homeworks.ini > /proc/1/fd/1
+7        */2 * * *	root      . /opt/venv/bin/activate && cd /data && xdufacool homeworks.ini > /proc/1/fd/1
+29,47 0,8-23 * * *	root      . /opt/venv/bin/activate && cd /data && xdufacool challenge.ini > /proc/1/fd/1

@@ -5,7 +5,7 @@ on:
     branches: master
 
 jobs:
-  login:
+  build-push-docker:
     runs-on: ubuntu-latest
     steps:
       

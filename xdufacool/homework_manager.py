@@ -8,8 +8,8 @@
 # ----------------------------------------------------------------------
 # ## CHANGE LOG
 # ----------------------------------------------------------------------
-# Last-Updated: 2022-06-06 19:33:12(+0800) [by Fred Qi]
-#     Update #: 2473
+# Last-Updated: 2022-06-06 20:23:32(+0800) [by Fred Qi]
+#     Update #: 2474
 # ----------------------------------------------------------------------
 import re
 import sys
@@ -257,7 +257,6 @@ class Submission():
             data['comment'] += u"\n！ 缺少作业附件。\n"
 
         body = Homework.mail_template.format(**data)
-        print(body)
         msg.attach(MIMEText(body, 'plain', 'utf-8'))
         return to_addr, msg
 
