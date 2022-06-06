@@ -4,8 +4,8 @@
 # Author: Fred Qi
 # Created: 2022-06-06 11:10:28(+0800)
 #
-# Last-Updated: 2022-06-06 16:39:05(+0800) [by Fred Qi]
-#     Update #: 257
+# Last-Updated: 2022-06-06 19:29:32(+0800) [by Fred Qi]
+#     Update #: 304
 # 
 
 # Commentary:
@@ -35,6 +35,7 @@ def load_classification_result(datafile):
             filename, label = ln.split()
             pathname, _ = path.splitext(filename)
             basename = path.basename(pathname)
+            # print(ln, label, len(f'{label}'), sep=',')
             results[basename] = int(label)
     return results
 
@@ -58,7 +59,6 @@ class ClassificationAccuracy(object):
     def accuracy(self, submission):
         y_pred = load_classification_result(submission)
         return classification_accuracy(self.y_true, y_pred)
-
 
     def eval_submissions(self, submissions):
         accuracy = {}
@@ -130,8 +130,13 @@ class LeaderBoard(object):
                 writer.writerow(row.__dict__)
 
     def display(self, topK=20):
-        lines = [str(item) for item in self.leaderboard[-topK:]]
-        return "\n".join(reversed(lines))
+        items = reversed(self.leaderboard[-topK:])
+        lines = []
+        for idx, item in enumerate(items):
+            if item.accuracy < 0.80:
+                break
+            lines.append(str(item) + f" {idx+1:2d}")
+        return "\n".join(lines)
 
 # 
 # metrics.py ends here

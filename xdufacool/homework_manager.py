@@ -8,8 +8,8 @@
 # ----------------------------------------------------------------------
 # ## CHANGE LOG
 # ----------------------------------------------------------------------
-# Last-Updated: 2022-05-16 10:43:00(+0800) [by Fred Qi]
-#     Update #: 2386
+# Last-Updated: 2022-06-06 19:33:12(+0800) [by Fred Qi]
+#     Update #: 2473
 # ----------------------------------------------------------------------
 import re
 import sys
@@ -26,6 +26,8 @@ from configparser import ExtendedInterpolation
 
 from xdufacool.utils import setup_logging
 from xdufacool.mail_helper import MailHelper
+from xdufacool.metrics import ClassificationAccuracy
+from xdufacool.metrics import LeaderBoardItem, LeaderBoard
 
 
 def load_and_hash(filename):
@@ -101,7 +103,6 @@ class Homework():
         """Initialize homework with a given dict."""
         for key, value in kwargs.items():
             setattr(self, key, value)
-
         
         if not hasattr(self, 'descriptor'):
             desc = f'{self.subject}-{self.homework_id}'
@@ -121,6 +122,12 @@ class Homework():
                 mconds.append(f'TO {Homework.email_teacher} Unanswered')
             self.conditions = ' '.join(mconds)
 
+        if hasattr(self, 'gt_class'):
+            self.metric = ClassificationAccuracy(self.gt_class)
+
+        if hasattr(self, 'leaderboard'):
+            self.leaderboard = LeaderBoard(self.leaderboard)
+
 
 class Submission():
     def __init__(self, email_uid, header):
@@ -128,6 +135,7 @@ class Submission():
 
         self.latest_email_uid = None  # latest uid of the email
         self.student_id = None
+        self.filenames = []
         self.info = dict()
         self.replied = set()
         self.body = None
@@ -196,8 +204,24 @@ class Submission():
             if overwrite or not os.path.exists(filename):
                 with open(filename, 'wb') as output_file:
                     output_file.write(data)
+                    self.filenames.append(filename)
                 # checksum, _ = load_and_hash(filename)
                 # assert checksum == sha256
+
+    def eval_submission(self, metric, leaderboard):
+        if self.filenames:
+            try:
+                acc = metric.accuracy(self.filenames[0])
+                self.info['accuracy'] = f"您此次提交的结果正确率为{acc*100:5.2f}%。"                
+                item = LeaderBoardItem({'student_id': self.student_id,
+                                        'accuracy': acc,
+                                        'time_submit': '',
+                                        'count': 1})
+                leaderboard.update(item)
+            except UnicodeDecodeError as err:
+                self.info['accuracy'] = f"您所提交的结果文件存在问题\n {type(err)}: {err}。"
+
+            self.info['leaderboard'] = "当前榜单如下：\n" + leaderboard.display()
 
     def create_confirmation(self):
         """Create an email to reply for confirmation."""
@@ -211,6 +235,13 @@ class Submission():
 
         fields = ['name', 'fromname', 'message-id']
         data = {key: self.info[key] for key in fields}
+
+        if 'accuracy' in self.info:
+            data['accuracy'] = self.info['accuracy']
+
+        if 'leaderboard' in self.info:
+            data['leaderboard'] = self.info['leaderboard']
+
         exts, checksum = set(), list()
         for sha, fn in self.data.items():
             checksum.append(sha + ' ' + fn)
@@ -226,6 +257,7 @@ class Submission():
             data['comment'] += u"\n！ 缺少作业附件。\n"
 
         body = Homework.mail_template.format(**data)
+        print(body)
         msg.attach(MIMEText(body, 'plain', 'utf-8'))
         return to_addr, msg
 
@@ -305,10 +337,12 @@ class HomeworkManager:
                 body, attachments = self.mail_helper.fetch_email(hw.latest_email_uid)
                 hw.save(body, attachments, homework)
                 logging.debug(f"  {hw.info['subject']} downloaded.")
+            if homework.metric and homework.leaderboard:
+                hw.eval_submission(homework.metric, homework.leaderboard)
             if not hw.is_confirmed():
                 self.mail_helper.flag(hw.latest_email_uid, ['Unseen', 'Unanswered'])
+                to_addr, msg = hw.create_confirmation()
                 if not self.testing:
-                    to_addr, msg = hw.create_confirmation()
                     self.mail_helper.send_email(Homework.email_teacher, to_addr, msg)
                     self.mail_helper.flag(hw.latest_email_uid, ['Seen', 'Answered'])
                     logging.debug(f"  {hw.info['subject']} emails confirmed.")
@@ -394,6 +428,7 @@ def check_homeworks():
             mgr.check_headers(homework)
             logging.info(f'* [{homework.descriptor}] Sending confirmation emails...')
             mgr.send_confirmation(homework)
+            homework.leaderboard.save()
     except KeyboardInterrupt as error:
         logging.error(f"{type(error)}: {error.strerror}")
     except ConnectionResetError as error:
