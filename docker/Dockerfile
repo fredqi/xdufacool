@@ -4,7 +4,9 @@ ARG DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update -qq && \
     apt-get upgrade -qq && \
-    apt-get install -qq --no-install-recommends -y cron python3-venv && \
+    apt-get install -qq --no-install-recommends -y tzdata cron python3-venv && \
+    ln -fs /usr/share/zoneinfo/Asia/Shanghai /etc/localtime && \
+    dpkg-reconfigure -f noninteractive tzdata && \
     apt-get clean && \
     rm -r /var/lib/apt/lists/*
 
