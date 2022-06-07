@@ -8,8 +8,8 @@
 # ----------------------------------------------------------------------
 # ## CHANGE LOG
 # ----------------------------------------------------------------------
-# Last-Updated: 2022-06-06 20:23:32(+0800) [by Fred Qi]
-#     Update #: 2474
+# Last-Updated: 2022-06-07 10:00:39(+0800) [by Fred Qi]
+#     Update #: 2482
 # ----------------------------------------------------------------------
 import re
 import sys
@@ -236,10 +236,8 @@ class Submission():
         fields = ['name', 'fromname', 'message-id']
         data = {key: self.info[key] for key in fields}
 
-        if 'accuracy' in self.info:
+        if 'accuracy' in self.info and 'leaderboard' in self.info:
             data['accuracy'] = self.info['accuracy']
-
-        if 'leaderboard' in self.info:
             data['leaderboard'] = self.info['leaderboard']
 
         exts, checksum = set(), list()
@@ -334,10 +332,10 @@ class HomeworkManager:
         for student_id, hw in submissions.items():
             if homework.download:
                 body, attachments = self.mail_helper.fetch_email(hw.latest_email_uid)
-                hw.save(body, attachments, homework)
+                hw.save(body, attachments, homework, overwrite=True)
                 logging.debug(f"  {hw.info['subject']} downloaded.")
-            if homework.metric and homework.leaderboard:
-                hw.eval_submission(homework.metric, homework.leaderboard)
+                if hasattr(homework, 'metric'):
+                    hw.eval_submission(homework.metric, homework.leaderboard)
             if not hw.is_confirmed():
                 self.mail_helper.flag(hw.latest_email_uid, ['Unseen', 'Unanswered'])
                 to_addr, msg = hw.create_confirmation()
@@ -427,7 +425,8 @@ def check_homeworks():
             mgr.check_headers(homework)
             logging.info(f'* [{homework.descriptor}] Sending confirmation emails...')
             mgr.send_confirmation(homework)
-            homework.leaderboard.save()
+            if hasattr(homework, 'leaderboard'):
+                homework.leaderboard.save()
     except KeyboardInterrupt as error:
         logging.error(f"{type(error)}: {error.strerror}")
     except ConnectionResetError as error:
