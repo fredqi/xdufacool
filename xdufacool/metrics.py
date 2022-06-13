@@ -4,8 +4,8 @@
 # Author: Fred Qi
 # Created: 2022-06-06 11:10:28(+0800)
 #
-# Last-Updated: 2022-06-06 19:29:32(+0800) [by Fred Qi]
-#     Update #: 304
+# Last-Updated: 2022-06-13 16:31:16(+0800) [by Fred Qi]
+#     Update #: 323
 # 
 
 # Commentary:
@@ -29,14 +29,14 @@ def load_classification_result(datafile):
     with open(datafile) as istream:
         data = istream.readlines()
         for ln in data:
-            ln = ln.strip()
-            if not ln:
+            fields = ln.strip().split()
+            if 2 != len(fields):
                 continue
-            filename, label = ln.split()
+            filename, label = fields[0], int(fields[1])
             pathname, _ = path.splitext(filename)
             basename = path.basename(pathname)
             # print(ln, label, len(f'{label}'), sep=',')
-            results[basename] = int(label)
+            results[basename] = label
     return results
 
 

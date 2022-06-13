@@ -8,8 +8,8 @@
 # ----------------------------------------------------------------------
 # ## CHANGE LOG
 # ----------------------------------------------------------------------
-# Last-Updated: 2022-06-07 10:00:39(+0800) [by Fred Qi]
-#     Update #: 2482
+# Last-Updated: 2022-06-13 16:37:18(+0800) [by Fred Qi]
+#     Update #: 2489
 # ----------------------------------------------------------------------
 import re
 import sys
@@ -220,6 +220,13 @@ class Submission():
                 leaderboard.update(item)
             except UnicodeDecodeError as err:
                 self.info['accuracy'] = f"您所提交的结果文件存在问题\n {type(err)}: {err}。"
+                logging.error(f"{type(err)}: {err}")
+            except ValueError as err:
+                messages = ["您所提交的结果文件存在问题",
+                            f"{type(err)}: {err}。",
+                            "Hint: Header line is not required."]
+                self.info['accuracy'] = "\n".join(messages)
+                logging.error(f"{type(err)}: {err}")
 
             self.info['leaderboard'] = "当前榜单如下：\n" + leaderboard.display()
 
@@ -430,7 +437,7 @@ def check_homeworks():
     except KeyboardInterrupt as error:
         logging.error(f"{type(error)}: {error.strerror}")
     except ConnectionResetError as error:
-        logging.error(f"{error}: {type(error)}")
+        logging.error(f"{type(error)}: {error}")
     except Exception as error:
         logging.error(f"{type(error)}: {error}")
 
