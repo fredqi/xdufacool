@@ -19,14 +19,19 @@
 # 
 
 import os
-import glob
 import openpyxl
 import warnings
 from os import path
+from glob import glob
 from mailmerge import MailMerge
 from datetime import date
+from docx2pdf import convert
+from PyPDF2 import PdfReader
+from PyPDF2 import PdfMerger
 
-WORKDIR = "/home/fred/cloud/share/senior-design"
+
+# WORKDIR = "/home/fred/cloud/share/senior-design"
+WORKDIR = "C:\\Users\\fredq\\github\\senior-design"
 
 DATA_FILE = path.join(WORKDIR, "毕业设计表单数据.xlsx")
 TEMPLATE_DIR = path.join(WORKDIR, "templates")
@@ -102,7 +107,7 @@ def document_merge(template, data):
 def template_dict(template_dir, sheets):
     """Create a dictionary of templates."""
     sheet_names = list(sheets)
-    template_files = glob.glob(f"{template_dir}/*.docx")
+    template_files = glob(f"{template_dir}/*.docx")
     templates = {}
     for filename in template_files:
         for name in sheet_names:
@@ -110,8 +115,9 @@ def template_dict(template_dir, sheets):
                 templates[name] = filename
                 sheet_names.remove(name)
     return templates
+
     
-if __name__ == "__main__":
+def form_auto_merge():
     sheet_names = ['日常考核', '软硬件验收', '中期检查', '指导教师评分表', '评阅评分表', '答辩登记表']
     templates = template_dict(TEMPLATE_DIR, sheet_names)
     # print("\n".join([f'{k}={v}' for k,v in templates.items()]))
@@ -122,7 +128,78 @@ if __name__ == "__main__":
         keys = sheet_column_keys(wb[sheet_name], fields)
         data = sheet_row_dict(wb[sheet_name], keys)
         document_merge(template, data)
+
+
+def merge_replacements(folder):
+    sheet_names = ['日常考核', '中期检查', '指导教师评分表', '评阅评分表', '软硬件验收', '答辩登记表']
+    files_pdf = glob(path.join(folder, "*.pdf"))
+    merger = PdfMerger()
+
+    for name in sheet_names:
+        pdf_file = glob(path.join(folder, f"*{name}*.pdf"))
+        pdf_stream = open(pdf_file[0], 'rb')
+        merger.append(pdf_stream)
+
+    output = open(path.join(folder,  "replacements.pdf"), 'wb')
+    merger.write(output)
+    merger.close()
+    output.close()
+
+
+def replace_pages(student_id, name, page_begin, page_end):
+    filename = f"{student_id}-{name}-毕业设计归档材料.pdf"
+    archive_filepath = path.join(WORKDIR, "archived", filename)
     
+    reader = PdfReader(archive_filepath)
+    n_pages = len(reader.pages)
+    archive_stream = open(archive_filepath, 'rb')
+
+    replacement_filepath = path.join(WORKDIR, f"{student_id}-{name}", "replacements.pdf")
+    replacement_stream = open(replacement_filepath, 'rb')
+
+    merger = PdfMerger()
+    merger.append(archive_stream, pages=(0, page_begin))
+    merger.append(replacement_stream)
+    merger.append(archive_stream, pages=(page_end, n_pages))
+
+    output_filepath = path.join(WORKDIR, "updated", filename)    
+    output_stream = open(output_filepath, 'wb')
+    merger.write(output_stream)
+
+    merger.close()
+    output_stream.close()    
+
+
+def convert_merge_replace():
+    folders = glob(path.join(WORKDIR, "1*"))
+    for folder in folders:
+        convert(folder)
+        merge_replacements(folder)
+
+
+if __name__ == "__main__":
+    # form_auto_merge()
+    # convert_merge_replace()
+    wb = openpyxl.load_workbook(DATA_FILE, data_only=True)
+    sheet = wb["replace"]
+    for row in sheet.iter_rows(min_row=2, values_only=True):
+        print(row)
+        replace_pages(*row)
+    # merge_replacements("16020520025-马丁扬")
+    # replace_pages("16020520025", "马丁扬", 17, 26)
+ 
+    # attentions = []
+    # for folder in folders:
+    #     print(f"Processing {folder}...")
+    #     convert(folder)
+    #     pdfs = glob(f"{folder}/*.pdf")
+    #     for pdf in pdfs:
+    #         reader = PdfReader(pdf)
+    #         n_pages = len(reader.pages)
+    #         if n_pages > 1:
+    #             print(n_pages, pdf)
+    #             attentions.append(f"{n_pages} pages in {pdf}")
+    # print("\n".join(attentions))
     
 # 
 # form_automa.py ends here
