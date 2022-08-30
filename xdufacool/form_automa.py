@@ -28,10 +28,15 @@ from datetime import date
 from docx2pdf import convert
 from PyPDF2 import PdfReader
 from PyPDF2 import PdfMerger
+from docx import Document
+from docx.enum.table import WD_TABLE_ALIGNMENT
+from docx.enum.table import WD_ALIGN_VERTICAL
 
 
 # WORKDIR = "/home/fred/cloud/share/senior-design"
 WORKDIR = "C:\\Users\\fredq\\github\\senior-design"
+TEACHDIR = "C:\\Users\\fredq\\github\\teaching"
+
 
 DATA_FILE = path.join(WORKDIR, "毕业设计表单数据.xlsx")
 TEMPLATE_DIR = path.join(WORKDIR, "templates")
@@ -61,10 +66,9 @@ def sheet_column_keys(sheet, fields):
     return keys
 
 
-def sheet_row_dict(sheet, keys, min_row=5):
+def sheet_row_dict(sheet, keys, min_row=5, max_row=24):
     """Create a dictionary from a row of a excel sheet."""
     score_range = {'及格': 60, '中等': 70, '良好': 80, '优秀': 90}
-    max_row = 24
     data = []
     for row in sheet.iter_rows(min_row=min_row, max_row=max_row):
         row_dict = {k:v.value for k, v in zip(keys, row)}
@@ -177,14 +181,112 @@ def convert_merge_replace():
         merge_replacements(folder)
 
 
-if __name__ == "__main__":
-    # form_auto_merge()
-    # convert_merge_replace()
+def sheet_replace():
     wb = openpyxl.load_workbook(DATA_FILE, data_only=True)
     sheet = wb["replace"]
     for row in sheet.iter_rows(min_row=2, values_only=True):
         print(row)
         replace_pages(*row)
+
+
+def prepare_teaching_summary(template, datafile):    
+    fields, wb = load_form_data(datafile)
+    sheet = wb['课程信息']
+    keys = sheet_column_keys(sheet, fields)
+    data = sheet_row_dict(sheet, keys, min_row=2, max_row=7)
+    for row in data:
+        name = row['course_name']
+        cid  = row['course_id']
+        cord = row['course_order']
+        term = row['semester']
+        summary_name = f"教学一览表-{name}-{cid}-{term}-{cord}.docx"
+        document = MailMerge(template)
+        document.merge(**row)
+        document.write(path.join(TEACHDIR, summary_name))
+
+
+def add_score_table():
+    template = "教学一览表-机器学习（双语）-AI204025-2021-2022学年第一学期-02.docx"
+    datafile_path = path.join(TEACHDIR, 'teaching-data.xlsx')
+    _, wb = load_form_data(datafile_path)
+    sheet = wb["2021-2022学年第一学期-02"]
+
+    data = []
+    for row in sheet.iter_rows():
+        data.append([item.value for item in row])
+
+    document = Document(path.join(TEACHDIR, template))
+    document.add_page_break()
+    document.add_heading("西安电子科技大学学习过程考核记录表", 1)
+    table = document.add_table(rows=0, cols=len(data[0]))
+    table.alignment = WD_TABLE_ALIGNMENT.CENTER
+    table.autofit = True
+    for row in data:
+        row_cells = table.add_row().cells
+        for idx, value in enumerate(row):
+            text = "" if value is None else f"{value}"
+            row_cells[idx].text = text
+            row_cells[idx].vertical_alignment = WD_ALIGN_VERTICAL.CENTER 
+
+    document.add_page_break()
+    document.save(path.join(TEACHDIR,'demo.docx'))    
+
+
+def testing_docx():
+    from docx.shared import Inches
+    document = Document(path.join(TEACHDIR, template))
+
+    document.add_page_break()
+
+    document.add_heading('Document Title', 1)
+
+    p = document.add_paragraph('A plain paragraph having some ')
+    p.add_run('bold').bold = True
+    p.add_run(' and some ')
+    p.add_run('italic.').italic = True
+
+    document.add_heading('Heading, level 1', level=1)
+    # document.add_paragraph('Intense quote', style='Intense Quote')
+
+    # document.add_paragraph(
+    #     'first item in unordered list', style='List Bullet'
+    # )
+    # document.add_paragraph(
+    #     'first item in ordered list', style='List Number'
+    # )
+
+    # document.add_picture('monty-truth.png', width=Inches(1.25))
+
+    records = (
+        (3, '101', 'Spam'),
+        (7, '422', 'Eggs'),
+        (4, '631', 'Spam, spam, eggs, and spam')
+    )
+
+    table = document.add_table(rows=1, cols=3)
+    hdr_cells = table.rows[0].cells
+    hdr_cells[0].text = 'Qty'
+    hdr_cells[1].text = 'Id'
+    hdr_cells[2].text = 'Desc'
+    for qty, id, desc in records:
+        row_cells = table.add_row().cells
+        row_cells[0].text = str(qty)
+        row_cells[1].text = id
+        row_cells[2].text = desc
+
+    document.add_page_break()
+    document.save(path.join(TEACHDIR,'demo.docx'))
+
+
+if __name__ == "__main__":
+    template_path = path.join(TEACHDIR, 'template.docx')
+    datafile_path = path.join(TEACHDIR, 'teaching-data.xlsx')
+    prepare_teaching_summary(template_path, datafile_path)
+    # testing_docx()
+    add_score_table()
+
+    # form_auto_merge()
+    # convert_merge_replace()
     # merge_replacements("16020520025-马丁扬")
     # replace_pages("16020520025", "马丁扬", 17, 26)
  

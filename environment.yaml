@@ -1,0 +1,11 @@
+name: xdufacool
+dependencies:
+  - python=3.8
+  - pip
+  - pip:
+    - docx-mailmerge2    
+    - PyPDF2[crypto]
+  - lxml
+  - openpyxl
+  - conda-forge::python-docx
+  - conda-forge::docx2pdf
