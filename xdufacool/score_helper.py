@@ -4,8 +4,8 @@
 # Author: Fred Qi
 # Created: 2021-01-10 20:41:42(+0800)
 #
-# Last-Updated: 2022-03-26 10:07:41(+0800) [by Fred Qi]
-#     Update #: 672
+# Last-Updated: 2022-09-07 22:47:50(+0800) [by Fred Qi]
+#     Update #: 807
 # 
 
 # Commentary:
@@ -24,9 +24,62 @@ import xlrd
 import xlwt
 import numpy as np
 from itertools import groupby
+from dataclasses import dataclass, field
+
 import shutil
 import click
 
+
+@dataclass
+class ScoreInterval(object):
+
+    left: float
+    right: float
+    desc: str
+    count: int = field(init=False)
+    percent: float = field(init=False)
+
+    def __str__(self):
+        # return f'{self.desc:4} ({self.left:4.1f}-{self.right:5.1f}): {self.count:d}({self.percent:5.2f}%)'
+        return f'{self.desc}: {self.count:d} ({self.percent:5.2f}%)'
+
+    def __post_init__(self):
+        self.count = 0
+        self.percent = 0.0
+
+    def grading(self, scores):
+        left_cond = scores >= self.left
+        if self.right < 100:            
+            right_cond = scores < self.right
+        else:
+            right_cond = scores <= self.right
+        indices = np.logical_and(left_cond, right_cond)
+        self.count = np.count_nonzero(indices)
+        self.percent = self.count*100.0/scores.size
+
+
+class ScoreStat(object):
+    def __init__(self, course_order, scores):
+        self.course_order = course_order
+        intervals = [ (90, 100, '优秀'), (80, 90, '良好'),
+                      (70, 80, '中等'), (60, 70, '及格'), (0, 60,'不及格')]
+        self.stat = [ScoreInterval(*value) for value in intervals]
+        self.average = 0.0
+        self.n_students = 0
+        self.__grading(scores)
+
+    def __str__(self):
+        lines = []
+        for sc_interval in self.stat:
+            lines.append(str(sc_interval))
+        return f'{self.n_students}/{self.average:5.2f}\n' + '\n'.join(lines)
+
+    def __grading(self, scores):
+        scs = np.array([float(x) for x in scores])
+        self.average = scs.mean()
+        self.n_students = scs.size
+        for sc_interval in self.stat:
+            sc_interval.grading(scs)
 
 def split_ranking(data, col_sub, col_rank):
     """Split scores into two categories according to whether it is ranked online."""

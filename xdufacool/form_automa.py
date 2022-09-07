@@ -4,8 +4,8 @@
 # Author: Fred Qi
 # Created: 2022-08-21 16:02:49(+0800)
 #
-# Last-Updated: 2022-09-06 12:11:28(+0800) [by Fred Qi]
-#     Update #: 1722
+# Last-Updated: 2022-09-07 23:21:38(+0800) [by Fred Qi]
+#     Update #: 2101
 # 
 
 # Commentary:
@@ -17,7 +17,7 @@
 #
 #
 # 
-
+import re
 import os
 import sys
 import fitz
@@ -29,21 +29,26 @@ from dataclasses import dataclass, field, asdict, fields
 from configparser import ConfigParser
 from configparser import ExtendedInterpolation
 
+from xdufacool.score_helper import ScoreStat
+
 from mailmerge import MailMerge
 from datetime import datetime
 from PyPDF2 import PdfReader
 from PyPDF2 import PdfMerger
 from docx import Document
 from docx.styles import style
-from docx.shared import Cm
+from docx.shared import Cm, Pt
+# from docx.text.parfmt import ParagraphFormat
+# from docx.styles.style import _TableStyle
+# from docx.styles.style import _ParagraphStyle
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.enum.table import WD_TABLE_ALIGNMENT
 from docx.enum.table import WD_ALIGN_VERTICAL
 
 import mistletoe
-from mistletoe.block_tokens import Heading, Paragraph
+from mistletoe.block_tokens import Heading, Paragraph, HTMLBlock
+from mistletoe.block_tokens_ext import Table
 from mistletoe.span_tokens import RawText, LineBreak, Strong, Emphasis
-from mistletoe.base_elements import WalkItem
 
 
 if 'linux' == sys.platform:
@@ -60,8 +65,12 @@ OUTPUT_DIR = WORKDIR
 
 
 class Markdown2Docx(object):
-    def __init__(self, filename):
+    def __init__(self, score_stat, filename, styles):
         # help(Heading)
+        tag_pattern = r'<table class="(?P<table_class>\w+)"></table>'
+        self.tag_parser = re.compile(tag_pattern)
+        self.score_stat = score_stat
+        self.styles = styles
         self.sections = {}
         with open(filename, 'r') as istream:
             text = istream.read()
@@ -83,17 +92,51 @@ class Markdown2Docx(object):
             assert isinstance(raw_text, RawText)
             return raw_text.content.strip()
 
-    def add_paragraph(self, cell, paragraphs, styles=None):
+    def add_exam_stat_table(self, cell):
+        """Add a table containing statistics of exam scores."""
+        headers = ['课序号', '人数'] + ['人数', '百分比']*5 + ['平均分']
+        table = cell.add_table(rows=3, cols=len(headers))
+        table.style = self.styles['Simple Table']
+        row_cells = table.rows[1].cells
+        for idx, text in enumerate(headers):
+            row_cells[idx].text = text
+
+        intervals = self.score_stat.stat
+        headers = [f'{iv.left}-{iv.right}' for iv in intervals[:-1]]
+        headers.append(intervals[-1].desc)
+        row_cells = table.rows[0].cells
+        for idx, text in enumerate(headers):
+            index = 2*idx + 2
+            row_cells[index].text = text
+
+        status = [self.score_stat.course_order,
+                  f'{self.score_stat.n_students:d}']
+        for iv in intervals:
+            status.extend([f'{iv.count:d}', f'{iv.percent:4.1f}%'])
+        status.append(f'{self.score_stat.average:5.2f}')
+        row_cells = table.rows[2].cells
+        for idx, text in enumerate(status):
+            row_cells[idx].text = text
+
+        # merge cells
+        for col in [0, 1, 12]:
+            cell_a, cell_b = table.cell(0, col), table.cell(1, col)
+            cell_a.merge(cell_b)
+        for col in range(2, 12, 2):
+            cell_a, cell_b = table.cell(0, col), table.cell(0, col + 1)
+            cell_a.merge(cell_b)
+
+    def add_content(self, cell, contents):
         # print(style)
-        for idx, item in enumerate(paragraphs):
+        for idx, item in enumerate(contents):
             if 0 == idx:
                 tblp = cell.paragraphs[0]
-                if "Heading 2" in styles:
-                    tblp.style = styles["Heading 2"]
+                if "Heading 2" in self.styles:
+                    tblp.style = self.styles["Heading 2"]
             else:
                 tblp = cell.add_paragraph()
             if isinstance(item, Heading):
-                tblp.style = styles["Heading 2"]
+                tblp.style = self.styles["Heading 2"]
                 run = tblp.add_run()
                 run.add_text(self.get_text(item)).bold = True
             elif isinstance(item, Paragraph):
@@ -101,16 +144,57 @@ class Markdown2Docx(object):
                     if isinstance(item, LineBreak):
                         tblp = cell.add_paragraph()
                         continue
-                    tblp.style = styles["Table Text"]
+                    tblp.style = self.styles["Table Text"]
                     run = tblp.add_run()
                     content = self.get_text(item)
                     if isinstance(item, Emphasis):
-                        content = f"    {content}    "
+                        content = f"  {content}  "
                     run.add_text(content)
                     if isinstance(item, Strong):
                         run.bold = True
                     elif isinstance(item, Emphasis):
                         run.underline = True
+            elif isinstance(item, Table):
+                self.add_table(cell, item)
+            elif isinstance(item, HTMLBlock):
+                m = self.tag_parser.match(item.content)
+                if m and "score_stat" == m.group("table_class"):
+                    # print("To add a table containing score statistics.")
+                    # table = cell.add_table(2, 2)
+                    self.add_exam_stat_table(cell)
+                
+
+    @staticmethod
+    def add_table_row(row_cells, items, header=False):
+        """Add a row to a table."""
+        for idx, cell_md in enumerate(items):
+            contents = cell_md.children
+            for item in contents:
+                if isinstance(item, RawText):
+                    p = row_cells[idx].paragraphs[0]
+                    text = Markdown2Docx.get_text(item)
+                    p.paragraph_format.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                    run = p.add_run(text)
+                    run.font.size = Pt(12)
+                    if header:
+                        run.bold = True
+                else:
+                    print(type(item), item)
+        
+    def add_table(self, cell, table_md):
+        """Add a table inside a table cell."""
+        # n_rows = len(table_md.children)+1
+        n_cols = len(table_md.header.children)
+        table = cell.add_table(rows=0, cols=n_cols)
+        table.style = self.styles['Simple Table']
+        table.autofit = True
+        table.allow_autofit = True
+        self.add_table_row(table.add_row().cells,
+                           table_md.header.children,
+                           header=True)
+        for row_md in table_md.children:
+            self.add_table_row(table.add_row().cells,
+                               row_md.children)
 
 
 class RowMapper(object):
@@ -269,126 +353,25 @@ def sheet_replace():
         replace_pages(*row)
 
 
-def add_score_table():
-    template = "教学一览表-机器学习（双语）-AI204025-2021-2022学年第一学期-02.docx"
-    datafile_path = path.join(TEACHDIR, 'teaching-data.xlsx')
-    _, wb = load_form_data(datafile_path)
-    sheet = wb["2021-2022学年第一学期-02"]
-
-    data = []
-    for row in sheet.iter_rows():
-        data.append([item.value for item in row])
-
-    document = Document(path.join(TEACHDIR, template))
-    document.add_page_break()
-    document.add_heading("西安电子科技大学学习过程考核记录表", 1)
-    table = document.add_table(rows=0, cols=len(data[0]))
-    table.alignment = WD_TABLE_ALIGNMENT.CENTER
-    table.autofit = True
-    for row in data:
-        row_cells = table.add_row().cells
-        for idx, value in enumerate(row):
-            text = "" if value is None else f"{value}"
-            row_cells[idx].text = text
-            row_cells[idx].vertical_alignment = WD_ALIGN_VERTICAL.CENTER 
-
-    document.add_page_break()
-    document.save(path.join(TEACHDIR,'demo.docx'))
-
-
-def testing_docx():
-    from docx.shared import Inches
-    document = Document(path.join(TEACHDIR, template))
-
-    document.add_page_break()
-
-    document.add_heading('Document Title', 1)
-
-    p = document.add_paragraph('A plain paragraph having some ')
-    p.add_run('bold').bold = True
-    p.add_run(' and some ')
-    p.add_run('italic.').italic = True
-
-    document.add_heading('Heading, level 1', level=1)
-    # document.add_paragraph('Intense quote', style='Intense Quote')
-
-    # document.add_paragraph(
-    #     'first item in unordered list', style='List Bullet'
-    # )
-    # document.add_paragraph(
-    #     'first item in ordered list', style='List Number'
-    # )
-
-    # document.add_picture('monty-truth.png', width=Inches(1.25))
-
-    records = (
-        (3, '101', 'Spam'),
-        (7, '422', 'Eggs'),
-        (4, '631', 'Spam, spam, eggs, and spam')
-    )
-
-    table = document.add_table(rows=1, cols=3)
-    hdr_cells = table.rows[0].cells
-    hdr_cells[0].text = 'Qty'
-    hdr_cells[1].text = 'Id'
-    hdr_cells[2].text = 'Desc'
-    for qty, id, desc in records:
-        row_cells = table.add_row().cells
-        row_cells[0].text = str(qty)
-        row_cells[1].text = id
-        row_cells[2].text = desc
-
-    document.add_page_break()
-    document.save(path.join(TEACHDIR,'demo.docx'))
-
-
 class SummaryComposer(object):
     """Composer for teaching summary."""
-    # def __init__(self, data, working_dir=TEACHDIR):
-    #     self.data = data
-    #     self.working_dir = working_dir
-    #     # self.template_file = self.get_summary_file(data)
-    #     # template_path = path.join(working_dir, self.template_file)
-    #     # if not path.exists(template_path):
-    #     #     template_path = None
-    #     markdown_path = path.join(TEACHDIR, '2021-2022学年第二学期-02.md')
-    #     self.md2docx = Markdown2Docx(markdown_path)
-    #     self.table_width = Cm(15)
-    #     self.table_height = Cm(22.5)
-    #     self.document = Document(data['summary_filepath'])
-    #     self.setup_core_properties()
-    #     self.config_styles()
 
     def __init__(self, course, term):
         self.course = course
         self.term = term
         self.table_width = Cm(15)
         self.table_height = Cm(22.5)
-        text_filepath = path.join(term.data_dir, term.summary_text)
-        self.md2docx = Markdown2Docx(text_filepath)
-        record_filepath = path.join(term.data_dir, term.record)
-        wb = openpyxl.load_workbook(record_filepath)
-        self.teaching_records = wb.active
-        wb = openpyxl.load_workbook(course.score_filepath)
-        self.scores = wb.active
         self.document = Document(course.summary_filepath)
         self.setup_core_properties()
         self.config_styles()
+        record_filepath = path.join(term.data_dir, term.record)
+        wb = openpyxl.load_workbook(record_filepath)
+        self.teaching_records = wb.active
+        self.load_scores(course.score_filepath)
+        text_filepath = path.join(term.data_dir, term.summary_text)
+        self.md2docx = Markdown2Docx(self.score_stat,
+                                     text_filepath, self.styles)
         
-
-    @staticmethod
-    def get_summary_file(data):
-        """Get the file name of the teaching summary."""
-        fields = set(['course_name', 'course_id', 'course_order', 'semester'])
-        intersection = fields & data.keys()
-        assert len(intersection) == len(fields)
-        name = data['course_name']
-        cid  = data['course_id']
-        cord = data['course_order']
-        term = data['semester']
-        summary_filename = f"教学一览表-{name}-{cid}-{term}-{cord}.docx"
-        return summary_filename
-
     @staticmethod
     def set_center(cell):
         p = cell.paragraphs[0]
@@ -399,6 +382,16 @@ class SummaryComposer(object):
         p = cell.paragraphs[0]
         p.add_run(text).bold = True
 
+    # @staticmethod
+    # def display(fmt):
+    #     if isinstance(fmt, _ParagraphStyle):
+    #         print(fmt.name)
+    #         print("  ", fmt.paragraph_format.alignment)
+    #         print("  ", fmt.font.name, fmt.font.size, fmt.font.bold)
+    #         print("  ", fmt.paragraph_format.line_spacing)
+    #         print("  ", fmt.paragraph_format.left_indent)
+    #         print("  ", fmt.paragraph_format.first_line_indent)            
+
     def config_styles(self):
         self.styles = {}
         for item in self.document.styles:
@@ -407,24 +400,29 @@ class SummaryComposer(object):
                 self.styles[name] = item
             elif name.find("Heading") >= 0:
                 self.styles[name] = item
-            # if name in self.styles:
-            #     print(name, self.styles[name])
                     
     def setup_core_properties(self):
-        """Setup core properties of the summary fiel."""
+        """Setup core properties of the summary file."""
         core_prop = self.document.core_properties
         core_prop.author = self.course.teachers
-        # self.data['teachers']
-        dt = self.course.summary_date
-        dt = datetime.strptime(dt, "%Y-%m-%d")
-        core_prop.created = dt
-        core_prop.last_printed = dt
-        # core_prop.created = self.data['date_data']
-        # core_prop.last_printed = self.data['date_data']
-        summary_filename = path.basename(self.course.summary_filepath)
-        # SummaryComposer.get_summary_file(self.data)
-        core_prop.title = summary_filename.replace(".docx", "")
-        core_prop.comments = "Comments"
+        core_prop.created = self.course.date
+        core_prop.last_printed = self.course.date
+        core_prop.title = f"{self.course.course_name} 教学一览表"
+        core_prop.subject = f"{self.course.course_name} {self.course.course_id}"
+        core_prop.comments = str(self.course)
+
+    def load_scores(self, score_filepath):
+        sheet = openpyxl.load_workbook(score_filepath).active
+        sheet_title = f"{self.course.semester}-{self.course.course_order}"
+        assert sheet_title == sheet.title
+
+        self.scores = []
+        for row in sheet.iter_rows(min_row=5):
+            self.scores.append([item.value for item in row])
+        index = self.scores[0].index("期末成绩")
+        # print(index, self.scores[0][index])
+        exam_scores = [row[index] for row in self.scores[1:]]
+        self.score_stat = ScoreStat(self.course.course_order, exam_scores)
 
     def add_table(self, heading, rows, cols=1,
                   headers=None, widths=None, style=None):
@@ -442,8 +440,8 @@ class SummaryComposer(object):
                 table.columns[idx].width = widths[idx]
                 table.cell(0, idx).width = widths[idx]
         else:
-            table.autofit = False
-            table.allow_autofit = False
+            table.autofit = True
+            table.allow_autofit = True
 
         # framed page contents
         if 1 == rows and 1 == n_cols:
@@ -463,10 +461,6 @@ class SummaryComposer(object):
 
     def add_teaching_record(self):
         """Add a table recording the teaching process."""
-
-        # semester = self.data['semester']
-        # course_order = self.data['course_order']
-        # records = wb_records[semester]
         records = self.teaching_records
         course_order = self.course.course_order
         keys = [f"上课时间-{course_order}", "知识点", "教学过程记录"]
@@ -496,48 +490,36 @@ class SummaryComposer(object):
             idx += 1
 
     def add_framed_section(self, section_title):
+        """For normal summary sections provided in markdown, which
+        include the following contents:
+          - 课程教学目标及与毕业要求的对应关系
+          - 课程考核方式及成绩评定原则
+          - 试卷（卷面）分析及总结
+          - 课程能力达成度分析及总结
+        """
+        
         table = self.add_table(section_title, rows=1, cols=1,
                                style="Frame Table")
         
         cell = table.cell(0, 0)
-        paragraphs = self.md2docx.sections[section_title]
-        self.md2docx.add_paragraph(cell, paragraphs, self.styles)
-
-    def add_teaching_goal(self):
-        section_title = "课程教学目标及与毕业要求的对应关系"
-        table = self.add_table(section_title, rows=1, cols=1,
-                               style="Frame Table")
-        
-        cell = table.cell(0, 0)
-        paragraphs = self.md2docx.sections[section_title]
-        self.md2docx.add_paragraph(cell, paragraphs, self.styles)
-
-    def add_scoring_rules(self):
-        section_title = "课程考核方式及成绩评定原则"
-        table = self.add_table(section_title, rows=1, cols=1,
-                               style="Frame Table")
-        
-        cell = table.cell(0, 0)
-        paragraphs = self.md2docx.sections[section_title]
-        self.md2docx.add_paragraph(cell, paragraphs, self.styles)
+        contents = self.md2docx.sections[section_title]
+        self.md2docx.add_content(cell, contents)
 
     def add_score_table(self):
         """Add score table."""
-        sheet_title = f"{self.course.semester}-{self.course.course_order}"
-        assert sheet_title == self.scores.title
-        data = []
-        for row in self.scores.iter_rows(min_row=5):
-            data.append([item.value for item in row])
-        
+        widths = [1.25, 2.5, 2, 1.25, 1.75, 1.9, 1.9, 1.9, 1.25]
         table = self.add_table("西安电子科技大学学习过程考核记录表",
-                               rows=1, headers=data[0],
+                               rows=1, headers=self.scores[0],
+                               widths=[Cm(w) for w in widths],
                                style="Score Table")
-        for row in data[1:]:
+        for row in self.scores[1:]:
             row_cells = table.add_row().cells
             for idx, value in enumerate(row):
                 text = "" if value is None else f"{value}"
-                row_cells[idx].text = text
+                p = row_cells[idx].paragraphs[0]
+                p.paragraph_format.alignment = WD_ALIGN_PARAGRAPH.CENTER
                 row_cells[idx].vertical_alignment = WD_ALIGN_VERTICAL.CENTER
+                p.text = text
 
     def add_exam_table(self):
         """Add exam sheet and grading rules."""
@@ -548,75 +530,19 @@ class SummaryComposer(object):
         run.add_text("（试题、标准答案及评分细则）").bold = True
         run = table.cell(0, 0).add_paragraph().add_run()
 
-        # exam_path = path.join(self.working_dir, f".{self.data['semester']}")
-        # exam_pattern = path.join(exam_path, "page*.png")
-        # for image in sorted(glob(exam_pattern)):
         for image in sorted(self.term.images):
             run.add_picture(image)
 
-    def add_exam_analysis(self):
-        section_title = "试卷（卷面）分析及总结"
-        table = self.add_table(section_title, rows=1, cols=1,
-                               style="Frame Table")
-        
-        cell = table.cell(0, 0)
-        paragraphs = self.md2docx.sections[section_title]
-        self.md2docx.add_paragraph(cell, paragraphs, self.styles)
-
-    def add_ability_analysis(self):
-        section_title = "课程能力达成度分析及总结"
-        table = self.add_table(section_title, rows=1, cols=1,
-                               style="Frame Table")
-        
-        cell = table.cell(0, 0)
-        paragraphs = self.md2docx.sections[section_title]
-        self.md2docx.add_paragraph(cell, paragraphs, self.styles)
-        
     def create_summary(self):
         self.add_teaching_record()
         self.add_framed_section("课程教学目标及与毕业要求的对应关系")
         self.add_framed_section("课程考核方式及成绩评定原则")
-        # self.add_teaching_goal()
-        # self.add_scoring_rules()
         self.add_score_table()
         self.add_exam_table()
         self.add_framed_section("试卷（卷面）分析及总结")
         self.add_framed_section("课程能力达成度分析及总结")
-        # self.add_exam_analysis()
-        # self.add_ability_analysis()
         self.document.save(self.course.summary_filepath)
     
-    
-def prepare_teaching_summary(template, scorefile, recordfile,
-                             working_dir=TEACHDIR):
-    record_filepath = path.join(working_dir, recordfile)
-    wb_records = openpyxl.load_workbook(record_filepath)
-    fields, wb = load_form_data(path.join(working_dir, scorefile))
-    sheet = wb['课程信息']
-    keys = sheet_column_keys(sheet, fields)
-    data = sheet_row_dict(sheet, keys, min_row=2, max_row=3)
-    for row in data:
-        semester, course_order = row['semester'], row['course_order']
-        print(f"Processing {semester}-{course_order}...")
-        summary_filename = SummaryComposer.get_summary_file(row)
-        merger = MailMerge(path.join(working_dir, template))
-        merger.merge(**row)
-        merger.write(path.join(working_dir, summary_filename))
-
-        composer = SummaryComposer(row)
-        composer.add_teaching_record(wb_records)
-        composer.add_framed_section("课程教学目标及与毕业要求的对应关系")
-        composer.add_framed_section("课程考核方式及成绩评定原则")
-        # composer.add_teaching_goal()
-        # composer.add_scoring_rules()
-        composer.add_score_table(wb)
-        composer.add_exam_table(wb)
-        composer.add_framed_section("试卷（卷面）分析及总结")
-        composer.add_framed_section("课程能力达成度分析及总结")
-        # composer.add_exam_analysis()
-        # composer.add_ability_analysis()
-        composer.save(summary_filename)
-
 
 class PdfPage2Image(object):
     
@@ -634,7 +560,6 @@ class PdfPage2Image(object):
         right  = self.cm_to_dots(paper_width - hmargin, self.dpi)
         bottom = self.cm_to_dots(paper_height - vmargin, self.dpi)
         self.clip = fitz.Rect(left, top, right, bottom)
-      
 
     @staticmethod
     def cm_to_dots(x, dpi=72):
@@ -683,6 +608,7 @@ class TermInfo(object):
             pdf2image = PdfPage2Image()
             self.images = pdf2image.convert(exam_filepath, output_dir)
 
+
 @dataclass
 class CourseInfo(object):
     """Information of a course."""
@@ -705,6 +631,9 @@ class CourseInfo(object):
 
     def __post_init__(self):
         self.date = datetime.strptime(self.summary_date, '%Y-%m-%d')
+        dt = self.date
+        self.summary_date = self.date.strftime(f'{dt.year}年{dt.month}月{dt.day}日')
+
         score_file = f"scores-{self.course_order}.xlsx"
         self.score_filepath = path.join(self.data_dir, score_file)
         # Filename of the teaching summary.
@@ -712,18 +641,9 @@ class CourseInfo(object):
                  self.semester, self.course_order]
         self.summary_file = '-'.join(parts) + ".docx"
         self.summary_filepath = path.join(self.working_dir, self.summary_file)
-        # self.summary_date = self.date.strftime('%Y年%m月%d日')
         
     def __str__(self):
         return f"{self.course_id:8} {self.course_name} {self.semester} {self.course_order} {self.teachers}"
-
-    # def summary_file(self):
-    #     """"""
-    #     name = self.course_name
-    #     cid  = self.course_id
-    #     cord = self.course_order
-    #     term = self.semester
-    #     return f"教学一览表-{name}-{cid}-{term}-{cord}.docx"
 
     def compose_summary(self, template, term):
         # Create the title page with mail merge.
@@ -739,23 +659,21 @@ class CourseInfo(object):
 def load_config(config_filepath):
     config = ConfigParser(interpolation=ExtendedInterpolation())
     config.read(config_filepath)
-    # workdir = config.get('general', 'workdir')
     template = config.get('general', 'template_filepath')
-    classes = config['general']['classes'].split(',')
-    course_info_keys = [f.name for f in fields(CourseInfo)]
-    for key in ['date', 'summary_file', 'summary_filepath', 'score_filepath']:
-        course_info_keys.remove(key)
-    term_keys = [f.name for f in fields(TermInfo)]
-    term_keys.remove('images')
+    
+    fields_init = filter(lambda f: f.init, fields(CourseInfo))
+    course_keys = [f.name for f in fields_init]
+    fields_init = filter(lambda f: f.init, fields(TermInfo))
+    term_keys = [f.name for f in fields_init]
     
     courses, terms = [], {}
     data = dict(config.items('general', raw=False))
-    for cls in classes:
+    for cls in config['general']['classes'].split(','):
         data.update(config.items(cls, raw=False))
         term_key = data['term_key']
         data.update(config.items(term_key, raw=False))
 
-        properties = {key: data[key] for key in course_info_keys}
+        properties = {key: data[key] for key in course_keys}
         info = CourseInfo(**properties)            
         courses.append(info)
         
@@ -769,58 +687,11 @@ def load_config(config_filepath):
   
 if __name__ == "__main__":
 
-    # exams = { "2021-2022学年第一学期": "PRML-2021-autumn-summary.pdf",
-    #           "2020-2021学年第二学期": "PRML21-summary.pdf",
-    #           "2019-2020学年第二学期": "PRML20-summary.pdf",
-    #           "2018-2019学年第二学期": "PRML19-summary.pdf"}
-
-    # pdf2image = PdfPage2Image()
-    # for semester, examfile in exams.items():
-    #     print(f"Processing {semester} ({examfile})...")
-    #     exam_filepath = path.join(TEACHDIR, 'exams', examfile)
-    #     output_dir = path.join(TEACHDIR, f'.{semester}')
-    #     images = pdf2image.convert(exam_fielpath, output_dir)
-
-    # template_path = path.join(TEACHDIR, 'template.docx')
-    # datafile_path = path.join(TEACHDIR, 'teaching-data.xlsx')
-    # prepare_teaching_summary("template-titlepage.docx",
-    #                          "teaching-data.xlsx",
-    #                          "teaching-records.xlsx")
-
-    config_filepath = "/home/fred/github/xdufacool/tests/data/teaching.ini"
-    courses, terms, template_filepath = load_config(config_filepath)
-
-    # exams = {key: value.exam_pdf_to_image() for key, value in terms.items()}
-    for course in courses:
-        print(course)
-        course.compose_summary(template_filepath, terms[course.semester])
-
-    # print(config.sections())
-    # for cls in classes:
-    #     data = dict(config.items(cls))
-    #     course = data['course']
-    #     data.update(config.items(course))
-
-    #     composer = SummaryComposer(data)
-        # composer.add_teaching_record(wb_records)
-        # composer.add_framed_section("课程教学目标及与毕业要求的对应关系")
-        # composer.add_framed_section("课程考核方式及成绩评定原则")
-        # # composer.add_teaching_goal()
-        # # composer.add_scoring_rules()
-        # composer.add_score_table(wb)
-        # composer.add_exam_table(wb)
-        # composer.add_framed_section("试卷（卷面）分析及总结")
-        # composer.add_framed_section("课程能力达成度分析及总结")
-        # # composer.add_exam_analysis()
-        # # composer.add_ability_analysis()
-        # composer.save(summary_filename)
-        
-
-    # markdown_path = path.join(TEACHDIR, '2021-2022学年第二学期-02.md')
-    # md2docx = Markdown2Docx(markdown_path)
-    
-    # testing_docx()
-    # add_score_table()
+    for config_filepath in glob("/home/fred/lectures/PRML/eval/summary/teaching.ini"):
+        courses, terms, template_filepath = load_config(config_filepath)
+        for course in courses:
+            print(course)
+            course.compose_summary(template_filepath, terms[course.semester])
 
     # form_auto_merge()
     # convert_merge_replace()
