@@ -4,8 +4,8 @@
 # Author: Fred Qi
 # Created: 2022-08-21 16:02:49(+0800)
 #
-# Last-Updated: 2022-09-07 23:21:38(+0800) [by Fred Qi]
-#     Update #: 2101
+# Last-Updated: 2022-09-12 16:51:52(+0800) [by Fred Qi]
+#     Update #: 2201
 # 
 
 # Commentary:
@@ -30,6 +30,7 @@ from configparser import ConfigParser
 from configparser import ExtendedInterpolation
 
 from xdufacool.score_helper import ScoreStat
+from xdufacool.score_helper import ScoreAnalysis
 
 from mailmerge import MailMerge
 from datetime import datetime
@@ -48,7 +49,7 @@ from docx.enum.table import WD_ALIGN_VERTICAL
 import mistletoe
 from mistletoe.block_tokens import Heading, Paragraph, HTMLBlock
 from mistletoe.block_tokens_ext import Table
-from mistletoe.span_tokens import RawText, LineBreak, Strong, Emphasis
+from mistletoe.span_tokens import RawText, LineBreak, Strong, Emphasis, HTMLSpan
 
 
 if 'linux' == sys.platform:
@@ -65,11 +66,16 @@ OUTPUT_DIR = WORKDIR
 
 
 class Markdown2Docx(object):
-    def __init__(self, score_stat, filename, styles):
+    def __init__(self, score_stat, score_analysis, filename, styles):
         # help(Heading)
-        tag_pattern = r'<table class="(?P<table_class>\w+)"></table>'
-        self.tag_parser = re.compile(tag_pattern)
+        tag_start = r'<(?P<name>\w+)\s+class="(?P<html_class>\w+)">'
+        tag_end = r'</\w+>'
+        table_pattern = tag_start + r'\s*' + tag_end
+        self.tag_parser = re.compile(table_pattern)
+        self.tag_start = re.compile(tag_start)
+        self.tag_end = re.compile(tag_end)
         self.score_stat = score_stat
+        self.score_analysis = score_analysis
         self.styles = styles
         self.sections = {}
         with open(filename, 'r') as istream:
@@ -158,26 +164,43 @@ class Markdown2Docx(object):
                 self.add_table(cell, item)
             elif isinstance(item, HTMLBlock):
                 m = self.tag_parser.match(item.content)
-                if m and "score_stat" == m.group("table_class"):
-                    # print("To add a table containing score statistics.")
-                    # table = cell.add_table(2, 2)
-                    self.add_exam_stat_table(cell)
-                
+                if m:
+                    tag_name, tag_class = m.groups()
+                    if "table" == tag_name and "score_stat" == tag_class:
+                        # print("To add a table containing score statistics.")
+                        # table = cell.add_table(2, 2)
+                        self.add_exam_stat_table(cell)
+            else:
+                print("Unhandled", type(item), item.content)
 
-    @staticmethod
-    def add_table_row(row_cells, items, header=False):
+    def add_table_row(self, row_cells, items, header=False):
         """Add a row to a table."""
         for idx, cell_md in enumerate(items):
             contents = cell_md.children
+            p = row_cells[idx].paragraphs[0]
+            p.paragraph_format.alignment = WD_ALIGN_PARAGRAPH.CENTER
             for item in contents:
                 if isinstance(item, RawText):
-                    p = row_cells[idx].paragraphs[0]
-                    text = Markdown2Docx.get_text(item)
-                    p.paragraph_format.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                    text = self.get_text(item)
                     run = p.add_run(text)
                     run.font.size = Pt(12)
                     if header:
                         run.bold = True
+                elif isinstance(item, HTMLSpan):
+                    m_start = self.tag_start.match(item.content)
+                    m_end = self.tag_start.match(item.content)
+                    # print(item.content, m_start, m_end)
+                    if m_start:
+                        tag_name, tag_class = m_start.groups()
+                        if "span" == tag_name:
+                            text = self.score_analysis.get_text(tag_class)
+                            # print(tag_class, text)
+                            run = p.add_run(text)
+                            run.font.size = Pt(12)
+                    elif m_end:
+                        tag_name = m_end.group('name')
+                        if 'span' == tag_name:
+                            continue
                 else:
                     print(type(item), item)
         
@@ -370,6 +393,7 @@ class SummaryComposer(object):
         self.load_scores(course.score_filepath)
         text_filepath = path.join(term.data_dir, term.summary_text)
         self.md2docx = Markdown2Docx(self.score_stat,
+                                     self.score_analysis,
                                      text_filepath, self.styles)
         
     @staticmethod
@@ -421,8 +445,16 @@ class SummaryComposer(object):
             self.scores.append([item.value for item in row])
         index = self.scores[0].index("期末成绩")
         # print(index, self.scores[0][index])
-        exam_scores = [row[index] for row in self.scores[1:]]
-        self.score_stat = ScoreStat(self.course.course_order, exam_scores)
+        scores_exam = [row[index] for row in self.scores[1:]]
+        self.score_stat = ScoreStat(self.course.course_order, scores_exam)
+        if '实验成绩' in self.scores[0]:
+            index = self.scores[0].index("实验成绩")
+        else:
+            index = self.scores[0].index("平时成绩")
+        scores_hw = [row[index] for row in self.scores[1:]]
+        self.score_analysis = ScoreAnalysis()
+        self.score_analysis.add_parts(['homeworks', 'final'],
+                                      [scores_hw, scores_exam])
 
     def add_table(self, heading, rows, cols=1,
                   headers=None, widths=None, style=None):
@@ -478,6 +510,7 @@ class SummaryComposer(object):
             row_cells = table.add_row().cells
             self.set_center(row_cells[0])
             self.set_bold(row_cells[0], f"{idx:d}")
+            # print(values, type(values[0]))
             row_cells[1].text = f"{values[0]:%Y-%m-%d}"
             self.set_center(row_cells[1])
             
@@ -687,7 +720,7 @@ def load_config(config_filepath):
   
 if __name__ == "__main__":
 
-    for config_filepath in glob("/home/fred/lectures/PRML/eval/summary/teaching.ini"):
+    for config_filepath in glob("/home/fred/lectures/PRML/eval/summary/teaching*.ini"):
         courses, terms, template_filepath = load_config(config_filepath)
         for course in courses:
             print(course)

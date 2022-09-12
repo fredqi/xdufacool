@@ -4,8 +4,8 @@
 # Author: Fred Qi
 # Created: 2021-01-10 20:41:42(+0800)
 #
-# Last-Updated: 2022-09-07 22:47:50(+0800) [by Fred Qi]
-#     Update #: 807
+# Last-Updated: 2022-09-12 17:03:42(+0800) [by Fred Qi]
+#     Update #: 928
 # 
 
 # Commentary:
@@ -67,6 +67,7 @@ class ScoreStat(object):
         self.average = 0.0
         self.n_students = 0
         self.__grading(scores)
+        # print(self)
 
     def __str__(self):
         lines = []
@@ -75,11 +76,56 @@ class ScoreStat(object):
         return f'{self.n_students}/{self.average:5.2f}\n' + '\n'.join(lines)
 
     def __grading(self, scores):
-        scs = np.array([float(x) for x in scores])
+        scs = np.array([float(x) if x else -1 for x in scores])
         self.average = scs.mean()
         self.n_students = scs.size
         for sc_interval in self.stat:
             sc_interval.grading(scs)
+
+
+class ScoreAnalysis(object):
+    def __init__(self):
+        self._scores = {}
+        # a tuple of abilities contains subtotal, weight, prop which are:
+        # - total scores of subitem
+        # - weight of corresponding graduation indicator
+        # - proportion of homework scores
+        # and the key is the name of corresponding graduation indicator.
+        self.abilities = {'ind14': (35.0, 0.1, 0.50),
+                          'ind33': (45.0, 0.3, 0.60),
+                          'ind42': (20.0, 0.1, 0.45)}
+
+    def __str__(self):
+        lines = []
+        for key in self._scores.keys():
+            lines.append(f'{key:8}: ' + self.get_text(key))
+        return '\n'.join(lines)
+
+    def _calc_abilities(self):
+        sc_homeworks = self._scores['avg_homeworks']
+        sc_final = self._scores['avg_final']
+
+        total = sum([v[0] for v in self.abilities.values()])
+        for key, (subtotal, weight, prop) in self.abilities.items():
+            sc_item = (prop*sc_homeworks + (1-prop)*sc_final)/total
+            self._scores[f'avg_{key}'] = sc_item*subtotal
+            self._scores[f'percent_{key}'] = sc_item
+            self._scores[f'grad_{key}'] = sc_item*weight
+
+    def add_parts(self, keys, scores):
+        for key, score in zip(keys, scores):
+            score_np = np.array([float(x) if x else -1 for x in score])
+            self._scores[f'avg_{key}'] = score_np.mean()
+        self._calc_abilities()
+    
+    def get_text(self, key):
+        value = self._scores.get(key, -1)
+        if key.find('percent') >= 0 or key.find('grad') >= 0:
+            text = f'{value:5.3f}'
+        else:
+            text = f'{value:4.2f}'
+        return text
+   
 
 def split_ranking(data, col_sub, col_rank):
     """Split scores into two categories according to whether it is ranked online."""
