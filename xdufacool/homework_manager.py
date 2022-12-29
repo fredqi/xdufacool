@@ -8,8 +8,8 @@
 # ----------------------------------------------------------------------
 # ## CHANGE LOG
 # ----------------------------------------------------------------------
-# Last-Updated: 2022-06-13 16:37:18(+0800) [by Fred Qi]
-#     Update #: 2489
+# Last-Updated: 2022-12-29 14:58:18(+0800) [by Fred Qi]
+#     Update #: 2490
 # ----------------------------------------------------------------------
 import re
 import sys
@@ -83,7 +83,7 @@ class Homework():
         exts = ['.c', '.cpp', '.m', '.py']
         Homework.exts_sources = set(exts + exts_zip)
         exts_zip = ['.zip', '.tar.gz', '.tar', '.xz', '.7z', '.rar']
-        exts = ['.pdf', '.doc', '.docx', '.odt', '.pages',
+        exts = ['.pdf', '.doc', '.docx', '.ppt', '.pptx', '.odt', '.pages',
                 '.htm', '.html', '.md', '.tex']
         Homework.exts_docs = set(exts + exts_zip)
 
