@@ -7,6 +7,7 @@ on:
       - 'requirements.txt'
       - 'xdufacool/**'
       - 'tests/**'
+      - '.github/workflows/*'
 
 jobs:
   testing:
@@ -14,8 +15,8 @@ jobs:
     runs-on: ubuntu-${{ matrix.os }}
     strategy:
       matrix:
-        python-version: [3.6, 3.8, 3.9]
-        os: [18.04, 20.04]
+        python-version: [3.7, 3.8, 3.9]
+        os: [20.04, 22.04]
 
     steps:
     - name: Checkout
