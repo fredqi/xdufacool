@@ -8,13 +8,14 @@
 # ----------------------------------------------------------------------
 # ## CHANGE LOG
 # ----------------------------------------------------------------------
-# Last-Updated: 2022-12-29 14:58:18(+0800) [by Fred Qi]
-#     Update #: 2490
+# Last-Updated: 2023-05-02 19:00:51(+0800) [by Fred Qi]
+#     Update #: 2532
 # ----------------------------------------------------------------------
 import re
 import sys
 import os.path
 import hashlib
+import imaplib
 import logging
 from email.header import Header
 from email.mime.multipart import MIMEMultipart
@@ -308,6 +309,7 @@ class HomeworkManager:
             self.mail_helper = MailHelper(imap_server, smtp_server,
                                           proxy=proxy)
         self.mail_helper.login(Homework.email_teacher, cfg_email['password'])
+        logging.info(f"  Logged in as {cfg_email['address']}.")
 
     def check_headers(self, homework):
         """Fetch email headers."""
@@ -416,17 +418,6 @@ def check_homeworks():
     try:
         logging.info(f'* Loading {config}...')
         mgr = HomeworkManager(config)
-    except TimeoutError as error:
-        logging.error(f"TimeoutError: {error.strerror} when connecting to email server.")
-        sys.exit(error.errno)
-    except AttributeError as error:
-        logging.error(f"AttributeError: {error}.")
-        sys.exit(1)
-    except KeyboardInterrupt:
-        logging.error("KeyboardInterrupt: Interrupted by user from keyword.")
-        sys.exit(1)
-        
-    try:
         for hw_key, homework in mgr.homeworks.items():
             logging.info(f'* [{homework.descriptor}] Checking email headers...')
             mgr.check_headers(homework)
@@ -435,11 +426,22 @@ def check_homeworks():
             if hasattr(homework, 'leaderboard'):
                 homework.leaderboard.save()
     except KeyboardInterrupt as error:
-        logging.error(f"{type(error)}: {error.strerror}")
+        logging.error("! KeyboardInterrupt: Interrupted by user from keyword.")
+        sys.exit(1)
+    except TimeoutError as error:
+        logging.error(f"! TimeoutError: {error.strerror} when connecting to email server.")
+        sys.exit(error.errno)
+    except AttributeError as error:
+        logging.error(f"! AttributeError: {error}.")
+        sys.exit(1)
     except ConnectionResetError as error:
         logging.error(f"{type(error)}: {error}")
+    except imaplib.IMAP4.error as err:
+        msg = err.args[0].decode()
+        logging.error(f"! Log in failed with: {msg}.")
+        sys.exit(1)
     except Exception as error:
-        logging.error(f"{type(error)}: {error}")
+        logging.error(f"! {type(error)}: {error}")
 
     logging.info('* Logout email servers...')
     mgr.quit()
