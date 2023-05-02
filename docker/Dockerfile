@@ -10,9 +10,11 @@ RUN apt-get update -qq && \
     apt-get clean && \
     rm -r /var/lib/apt/lists/*
 
-COPY crontab /etc/cron.d/xdufacool
-RUN chmod 0644 /etc/cron.d/xdufacool &&\
-    crontab /etc/cron.d/xdufacool
+COPY entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
+
+# RUN chmod 0644 /etc/cron.d/xdufacool &&\
+#     crontab /etc/cron.d/xdufacool
 
 RUN python3 -m venv /opt/venv && \
     . /opt/venv/bin/activate && \

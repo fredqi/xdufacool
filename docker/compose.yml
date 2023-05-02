@@ -11,9 +11,10 @@ services:
   xdufacool:
     build: .
     image: ghcr.io/fredqi/xdufacool:latest
-    entrypoint: ["/usr/sbin/cron", "-f"]
-    # ["/bin/bash", "-l", "-c", "find /usr -type f -name cron"]
+    entrypoint: ["entrypoint.sh"]
     container_name: xdufacool
+    environment:
+      - TASKFILE=AISE23.ini
+      - SCHEDULE=7 6-22/3 * * *
     volumes:
       - /home/data/homeworks:/data
-
