@@ -1,6 +1,5 @@
 name: xdufacool
 dependencies:
-  - python=3.8
   - pip
   - pip:
     - docx-mailmerge2
