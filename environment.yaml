@@ -3,9 +3,20 @@ dependencies:
   - python=3.8
   - pip
   - pip:
-    - docx-mailmerge2    
+    - docx-mailmerge2
+    - PyMuPDF
     - PyPDF2[crypto]
-  - lxml
+  - numpy
+  - click
+  - xlrd
+  - xlwt  
+  - lxml  
   - openpyxl
+  - conda-forge::pdf2image
   - conda-forge::python-docx
-  - conda-forge::docx2pdf
+  - conda-forge::python-pptx
+  - conda-forge::pyyaml
+  - conda-forge::pypandoc
+  - conda-forge::mistletoe-ebp
+  - conda-forge::bibtexparser
+  - conda-forge::pyzotero

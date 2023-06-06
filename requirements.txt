@@ -7,3 +7,8 @@ click
 numpy
 pdf2image
 bibtexparser
+fitz
+PyMuPDF
+openpyxl
+python-docx
+python-pptx
