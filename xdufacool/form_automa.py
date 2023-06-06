@@ -4,8 +4,8 @@
 # Author: Fred Qi
 # Created: 2022-08-21 16:02:49(+0800)
 #
-# Last-Updated: 2022-09-12 16:51:52(+0800) [by Fred Qi]
-#     Update #: 2201
+# Last-Updated: 2023-06-06 19:08:07(+0800) [by Fred Qi]
+#     Update #: 2253
 # 
 
 # Commentary:
@@ -53,14 +53,17 @@ from mistletoe.span_tokens import RawText, LineBreak, Strong, Emphasis, HTMLSpan
 
 
 if 'linux' == sys.platform:
-    WORKDIR = "/home/fred/cloud/share/senior-design"
-    TEACHDIR = "/home/fred/cloud/share/teaching"
+    # WORKDIR = "/home/fred/cloud/share/senior-design"
+    # WORKDIR = "/home/fred/cloud/OneDrive/students/forms-undergraduates"
+    WORKDIR = "/home/fred/cloud/OneDrive/students/senior-design/templates"
+    TEACHDIR = "/home/fred/cloud/OneDrive/students/senior-design"
+    # TEACHDIR = "/home/fred/cloud/share/teaching"
 elif 'win32' == sys.platform:
     from docx2pdf import convert
     WORKDIR = "C:\\Users\\fredq\\github\\senior-design"
     TEACHDIR = "C:\\Users\\fredq\\github\\teaching"
 
-DATA_FILE = path.join(WORKDIR, "毕业设计表单数据.xlsx")
+DATA_FILE = path.join(TEACHDIR, "毕业设计表单数据-2023.xlsx")
 TEMPLATE_DIR = path.join(WORKDIR, "templates")
 OUTPUT_DIR = WORKDIR
 
@@ -253,7 +256,7 @@ def sheet_column_keys(sheet, fields):
     return keys
 
 
-def sheet_row_dict(sheet, keys, min_row=5, max_row=24):
+def sheet_row_dict(sheet, keys, min_row=4, max_row=8):
     """Create a dictionary from a row of a excel sheet."""
     score_range = {'及格': 60, '中等': 70, '良好': 80, '优秀': 90}
     data = []
@@ -272,6 +275,8 @@ def sheet_row_dict(sheet, keys, min_row=5, max_row=24):
             dt = row_dict['date']
             row_dict['date_data'] = dt
             row_dict['date'] = f'{dt.year}年{dt.month}月{dt.day}日'
+            row_dict['year'] = f'{dt.year}'
+            row_dict['year_p'] = f'{dt.year-1}'
         data.append(row_dict)
     return data
 
@@ -308,13 +313,13 @@ def template_dict(template_dir, sheets):
     return templates
 
     
-def form_auto_merge():
-    sheet_names = ['日常考核', '软硬件验收', '中期检查', '指导教师评分表', '评阅评分表', '答辩登记表']
-    templates = template_dict(TEMPLATE_DIR, sheet_names)
+def form_auto_merge(sheets=['日常考核']):
+    # sheet_names = ['日常考核', '软硬件验收', '中期检查', '指导教师评分表', '评阅评分表', '答辩登记表']
+    templates = template_dict(TEMPLATE_DIR, sheets)
     # print("\n".join([f'{k}={v}' for k,v in templates.items()]))
     fields, wb = load_form_data(DATA_FILE)
     # print(fields)
-    for sheet_name in sheet_names:
+    for sheet_name in sheets:
         template = templates[sheet_name]
         keys = sheet_column_keys(wb[sheet_name], fields)
         data = sheet_row_dict(wb[sheet_name], keys)
@@ -676,7 +681,7 @@ class CourseInfo(object):
         self.summary_filepath = path.join(self.working_dir, self.summary_file)
         
     def __str__(self):
-        return f"{self.course_id:8} {self.course_name} {self.semester} {self.course_order} {self.teachers}"
+        return f"{self.course_id:8} {self.course_name} {self.semester} {self.course_order} {self.classes} {self.teachers}"
 
     def compose_summary(self, template, term):
         # Create the title page with mail merge.
@@ -720,16 +725,17 @@ def load_config(config_filepath):
   
 if __name__ == "__main__":
 
-    for config_filepath in glob("/home/fred/lectures/PRML/eval/summary/teaching*.ini"):
-        courses, terms, template_filepath = load_config(config_filepath)
-        for course in courses:
-            print(course)
-            course.compose_summary(template_filepath, terms[course.semester])
+    # for config_filepath in glob("/home/fred/lectures/PRML/eval/summary/teaching-21+22.ini"):
+    #     courses, terms, template_filepath = load_config(config_filepath)
+    #     for course in courses:
+    #         print(course)
+    #         course.compose_summary(template_filepath, terms[course.semester])
 
-    # form_auto_merge()
-    # convert_merge_replace()
-    # merge_replacements("16020520025-马丁扬")
-    # replace_pages("16020520025", "马丁扬", 17, 26)
+    sheets = ['日常考核', '软硬件验收', '中期检查', '指导教师评分表', '评阅评分表', '答辩登记表']
+    form_auto_merge(sheets)
+    # # convert_merge_replace()
+    # # merge_replacements("16020520025-马丁扬")
+    # # replace_pages("16020520025", "马丁扬", 17, 26)
  
     # attentions = []
     # for folder in folders:

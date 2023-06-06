@@ -5,8 +5,8 @@
 # Author: Fred Qi
 # Created: 2021-08-11 17:29:25(+0800)
 #
-# Last-Updated: 2021-08-27 14:31:43(+0800) [by Fred Qi]
-#     Update #: 2125
+# Last-Updated: 2023-05-13 19:23:32(+0800) [by Fred Qi]
+#     Update #: 2456
 # 
 
 # Commentary:
@@ -21,6 +21,9 @@
 
 import re
 import xml.etree.ElementTree as ET
+from pyzotero import zotero
+from requests.exceptions import HTTPError
+from pyzotero.zotero_errors import UnsupportedParams
 
 
 class paperIDParser(object):
@@ -546,6 +549,175 @@ def simplify_zotero_rdf():
 
     xmlfile = "zotero-prev-simplified.rdf"
     tree_prev.write(xmlfile, encoding="UTF-8")
-  
+
+
+def display_dict(data, keys=None, indent=2):
+    lines = []
+    if keys:
+        keys_disp = filter(lambda k: k in data, keys)
+    else:
+        keys_disp = data.keys()
+    for key in keys_disp:
+        value = data[key]
+        lines.append(" "*indent + f"{key}: {value}")
+    return "\n".join(lines)
+
+
+def retrieve_zotero_items(zot, n_iter=20, n_start=0):
+    items = []
+    n_items = zot.num_items()
+    n_limit = int(n_items / n_iter)
+    while n_start < n_items:
+        print(n_start, end=',')
+        items_loop = zot.top(limit=n_limit, start=n_start)
+        items.extend(items_loop)
+        n_start += n_limit
+    return items
+
+
+def organize_by_doi(items):
+    items_doi = {}
+    for item in items:
+        dt = item['data']
+        if 'DOI' in dt and dt['DOI']:
+            doi = dt['DOI']
+            key = doi.strip()
+            items_doi[key] = item
+    return items_doi
+
+
+def display_item_types(zot):
+    """Item types: artwork audioRecording bill blogPost book
+    bookSection case conferencePaper dataset dictionaryEntry document
+    email encyclopediaArticle film forumPost hearing instantMessage
+    interview journalArticle letter magazineArticle manuscript map
+    newspaperArticle note patent podcast preprint presentation
+    radioBroadcast report computerProgram standard statute tvBroadcast
+    thesis videoRecording webpage
+    """
+    item_types = zot.item_types()
+    # print(item_types)
+    # print(type(item_types))
+    # print(item_types)
+    types = [info['itemType'] for info in item_types]
+    types_disp = "\n".join(types)
+    # print(types_disp)
+
+def display_type_fields(zot, itemTypes=['journalArticle', 'conferencePaper']):
+    """..."""
+    for itemType in itemTypes:
+        field_names = zot.item_type_fields(itemType)
+        fields = [fn['field'] for fn in field_names]
+        fields_disp = ",".join(fields)
+        print(fields_disp)
+
+
+def display_item(item):
+    dt = item['data']
+    f_keys = ['DOI', 'title', 'publicationTitle']
+    fields = []
+    for key in f_keys:
+        if key in dt:
+            fields.append(dt[key])
+    return " ".join(fields)
+
+
+if __name__ == "__main__":
+    lib_id = '2351383'
+    user_id = '31723'
+    api_key = 'jZAMkJ044UOablsdup936yTG'
+    jabbr = 'journalAbbreviation'
+    
+    # zot = zotero.Zotero(user_id, 'user', api_key)
+    zot = zotero.Zotero(lib_id, 'group', api_key)
+    print(zot.last_modified_version())
+    # display_item_types(zot)
+    # display_type_fields(zot)
+    
+    # items_my = retrieve_zotero_items(zot, n_iter=50)
+    # zot.add_parameters(itemType='journalArticle')
+    n_limit = 32
+    # items = zot.top(limit=n_limit, itemType='journalArticle')
+    zot_iter = zot.makeiter(zot.top(limit=n_limit, itemType='journalArticle'))
+    for items in zot_iter:
+        # while len(items) >= n_limit:
+        dt = items[0]['data']
+        print(len(items), dt['itemType'], dt['title'])
+        items_updating = []
+        for item in items:
+            dt = item['data']
+            if jabbr in dt and len(dt[jabbr]) > 0:
+                print(' ', dt[jabbr], dt['title'])
+                # del dt[jabbr]
+                dt[jabbr] = ''
+                items_updating.append(item)
+                try:
+                    ret = zot.update_item(item)
+                    print(ret, item['key'], dt['title'])
+                except HTTPError as err:
+                    print(err)
+                except UnsupportedParams as err_params:
+                    print(err_params)
+        # print(len(items), len(items_updating))
+        # zot.check_items(items_updating)
+        # zot.update_items(items_updating)
+        # if len(items) >= 32:
+        #     items = zot.follow()
+    print(zot.last_modified_version())
+    # doi_my = organize_by_doi(items_my)
+    
+    # zot = zotero.Zotero(lib_id, 'group', api_key)
+    # items_group = retrieve_zotero_items(zot)
+    # doi_group = organize_by_doi(items_group)
+
+    # print()
+    # for doi in doi_my.keys():
+    #     if doi in doi_group:
+    #         item = doi_group[doi]
+    #         print(display_item(item))
+
+    # n_start, n_iter = 0, 20
+    # n_items = zot.num_items()
+    # n_limit = int(n_items / n_iter)
+    # # zot.add_parameters(q='Are Transformers Effective', limit=n_limit, start=n_start)
+    # lines = []
+    # while n_start < n_items:
+    #     items = zot.top(limit=n_limit, start=n_start)
+    #     for item in items:
+    #         dt = item['data']
+    #         if 'DOI' in dt and dt['DOI']:
+    #             doi = dt['DOI']
+    #         else:
+    #             doi = dt['key']
+    #         lines.append(doi)
+    #     n_start += n_limit
+    # print("\n".join(lines))
+    #     # children = zot.children(item['key'])
+    #     # # links, dt = items['links'], items['data']
+    #     # # print(display_dict(dt, keys=['key', 'title', 'note', 'version']))
+    #     # print(len(children))
+    #     # for sub_item in children:
+    #     #     sub_dt = sub_item['data']
+    #     #     print(sub_dt.keys())
+    #     #     print(display_dict(sub_dt, keys=['key', 'itemType', 'title', 'note', 'version']))
+        
+        
+    # # cols = zot.collections()
+    # # for col in cols:
+    # #     dt = col['data']
+    # #     print(dt['name'], dt['key'], dt['parentCollection'])
+    # #     tags = zot.collection_tags(dt['key'])
+    # #     print(tags)
+
+    # # # List and clarify tags
+    # # tags = zot.tags()
+    # # # print("\n".join(tags))
+    # # tps = zot.item_types()
+    # # for dt in tps:
+    # #     itemType = dt['itemType']
+    # #     print(itemType)
+    # #     ctps = zot.item_creator_types(itemType)
+    # #     for cdt in ctps:
+    # #         print(cdt['creatorType'])
 # 
 # rdf-org.py ends here

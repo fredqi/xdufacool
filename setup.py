@@ -48,7 +48,8 @@ def setup_package():
                                        'pdf2pptx  = xdufacool.pdf2pptx:pdf2pptx',
                                        'syllabus  = xdufacool.syllabus:syllabus_helper',
                                        'xduscore  = xdufacool.score_helper:xduscore',
-                                       'arxort = xdufacool.organize_bib:organize_bib']},
+                                       'arxort = xdufacool.organize_bib:organize_bib',
+                                       'invoice_helper = xdufacool.invoice:collect_invoice']},
                     # unit tests
                     test_suite="tests")
     if (len(sys.argv) >= 2

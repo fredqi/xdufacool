@@ -4,8 +4,8 @@
 # Author: Fred Qi
 # Created: 2021-01-10 20:41:42(+0800)
 #
-# Last-Updated: 2022-09-12 17:03:42(+0800) [by Fred Qi]
-#     Update #: 928
+# Last-Updated: 2023-03-16 18:55:23(+0800) [by Fred Qi]
+#     Update #: 946
 # 
 
 # Commentary:
@@ -208,7 +208,7 @@ def student_form(students, sid_label, name_label):
     return data
 
 
-def merge_scores(scores, weights=None):
+def merge_scores(scores, weights=None, n_digits=0):
     s_keys = list(scores.keys())
     # headers = ["姓名", "学号"] + s_keys + ["加权平均分"]
     if weights is None:
@@ -234,7 +234,7 @@ def merge_scores(scores, weights=None):
             avg += weights[key] * sc
             scs[key] = sc
         avg /= w_sum
-        scs["加权平均分"] = round(avg, 1)
+        scs["加权平均分"] = round(avg, n_digits)
         if avg < 60:
             errors.append([sid, avg])
         data[sid] = scs
@@ -377,11 +377,13 @@ def collect(scores, weights, tasks, output, **kwargs):
 @click.argument("forms", nargs=-1, type=click.Path(exists=True))
 @click.option("-s", "--score", type=click.Path())
 @click.option("-f", "--field", default="加权平均分", type=click.STRING)
-@click.option('--sid-xdu', default='学号', type=click.STRING)
+@click.option('--sid-baidu', default='学号', type=click.STRING)
+@click.option('--sid-xdu', default='学号(文本)', type=click.STRING)
+@click.option('--score-xdu', default='实验成绩(数字)', type=click.STRING)
 def fill(forms, score, field, **kwargs):
     """Fill forms for uploading to Xidian."""
     scores = load_xls(score)
-    fields = [kwargs["sid_xdu"], field]
+    fields = [kwargs["sid_baidu"], field]
     sid_col, score_col = find_column_index(scores[0], fields)
     for row in scores:
         if isinstance(row[sid_col], float):
@@ -390,7 +392,7 @@ def fill(forms, score, field, **kwargs):
 
     for xlsfile in forms:
         score_form = load_xls(xlsfile)
-        sid_col, score_col = find_column_index(score_form[0], [kwargs["sid_xdu"], field])
+        sid_col, score_col = find_column_index(score_form[0], [kwargs["sid_xdu"], kwargs["score_xdu"]])
         fill_score_form(score_form, scores_dict, sid_col, score_col)
         write_xls(score_form, xlsfile)
 
