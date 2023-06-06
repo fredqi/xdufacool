@@ -8,8 +8,8 @@
 # ----------------------------------------------------------------------
 # ## CHANGE LOG
 # ----------------------------------------------------------------------
-# Last-Updated: 2023-05-02 19:00:51(+0800) [by Fred Qi]
-#     Update #: 2532
+# Last-Updated: 2023-06-06 19:10:54(+0800) [by Fred Qi]
+#     Update #: 2534
 # ----------------------------------------------------------------------
 import re
 import sys
@@ -120,7 +120,7 @@ class Homework():
             if hasattr(self, 'date_after'):
                 mconds.append(f'SINCE {self.date_after}')
             if not batch:
-                mconds.append(f'TO {Homework.email_teacher} Unanswered')
+                mconds.append(f'TO {Homework.email_teacher}')
             self.conditions = ' '.join(mconds)
 
         if hasattr(self, 'gt_class'):
@@ -141,6 +141,8 @@ class Submission():
         self.replied = set()
         self.body = None
         self.data = dict()
+        self.emails = list()
+        self.accs = list()
         # Update the homework instance
         self.update(email_uid, header)
 
@@ -183,6 +185,7 @@ class Submission():
             update_info = True
 
         email_uid_prev = email_uid
+        self.emails.append(email_uid)
         if update_info:
             email_uid_prev = self.latest_email_uid
             self.latest_email_uid = email_uid
@@ -219,6 +222,7 @@ class Submission():
                                         'time_submit': '',
                                         'count': 1})
                 leaderboard.update(item)
+                self.accs.append(acc)
             except UnicodeDecodeError as err:
                 self.info['accuracy'] = f"您所提交的结果文件存在问题\n {type(err)}: {err}。"
                 logging.error(f"{type(err)}: {err}")
@@ -230,6 +234,7 @@ class Submission():
                 logging.error(f"{type(err)}: {err}")
 
             self.info['leaderboard'] = "当前榜单如下：\n" + leaderboard.display()
+            
 
     def create_confirmation(self):
         """Create an email to reply for confirmation."""
@@ -340,11 +345,15 @@ class HomeworkManager:
         logging.debug(f"    {len(submissions)} confirmations to be sent.")
         for student_id, hw in submissions.items():
             if homework.download:
-                body, attachments = self.mail_helper.fetch_email(hw.latest_email_uid)
-                hw.save(body, attachments, homework, overwrite=True)
-                logging.debug(f"  {hw.info['subject']} downloaded.")
-                if hasattr(homework, 'metric'):
-                    hw.eval_submission(homework.metric, homework.leaderboard)
+                for euid in hw.emails:
+                    # print(euid, hw.latest_email_uid)
+                    body, attachments = self.mail_helper.fetch_email(euid)
+                    hw.save(body, attachments, homework, overwrite=True)
+                    logging.debug(f"  {hw.info['subject']}/{euid} downloaded.")
+                    if hasattr(homework, 'metric'):
+                        hw.eval_submission(homework.metric, homework.leaderboard)
+                if hw.accs:
+                    print(hw.student_id, max(hw.accs), len(hw.accs), len(hw.emails), sep=',')
             if not hw.is_confirmed():
                 self.mail_helper.flag(hw.latest_email_uid, ['Unseen', 'Unanswered'])
                 to_addr, msg = hw.create_confirmation()

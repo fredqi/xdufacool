@@ -4,8 +4,8 @@
 # Author: Fred Qi
 # Created: 2022-06-06 11:19:45(+0800)
 #
-# Last-Updated: 2022-06-06 16:33:32(+0800) [by Fred Qi]
-#     Update #: 99
+# Last-Updated: 2022-06-13 18:30:40(+0800) [by Fred Qi]
+#     Update #: 110
 # 
 
 # Commentary:
@@ -30,13 +30,15 @@ class TestAccuracy(TestCase):
     def setUp(self):
         self.gt = {'f5JapBNenR7tjkYxO1V4cHgL3dlTPCyA': 3,
                    'SukGlhoeUfjiqwIFcJLgxWdbO3sBQrzZ': 5,
-                   'pKHWP5NGI6urf034B7nbqF1Y9URdesw2': 11}
+                   'pKHWP5NGI6urf034B7nbqF1Y9URdesw2': 11,
+                   '06yUTYIeaRsE782Ou5dh23Pzm9XpkBoL': 7}
         self.pred = {'f5JapBNenR7tjkYxO1V4cHgL3dlTPCyA': 3,
                      'SukGlhoeUfjiqwIFcJLgxWdbO3sBQrzZ': 6,
                      'pKHWP5NGI6urf034B7nbqF1Y9URdesw2': 11,
+                     '06yUTYIeaRsE782Ou5dh23Pzm9XpkBoL': 7,
                      'pKHWP5NGI6urf444B7nbqF1Y9URdesw2': 10}
-        self.accuracy = {'19200300098': 2.0/3,
-                         '20200340003': 2.0/3}
+        self.accuracy = {'19200300098': 2.0/4,
+                         '20200340003': 2.0/4}
 
     def test_load_results(self):
         results = load_classification_result('tests/data/test_list.txt')
@@ -45,13 +47,13 @@ class TestAccuracy(TestCase):
 
     def test_classification_accuracy(self):
         accuracy = classification_accuracy(self.gt, self.pred)
-        self.assertEqual(2.0/3, accuracy,
+        self.assertEqual(3.0/4, accuracy,
                          "Incorrect classification accuracy.")
 
     def test_ClassificationAccuracy(self):
         acc_metric = ClassificationAccuracy('tests/data/test_list.txt')
         accuracy = acc_metric.accuracy('tests/data/test_pred.txt')
-        self.assertEqual(2.0/3, accuracy,
+        self.assertEqual(2.0/4, accuracy,
                          "Incorrect classification accuracy.")
 
     def test_eval_submissions(self):

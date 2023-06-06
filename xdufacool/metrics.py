@@ -4,8 +4,8 @@
 # Author: Fred Qi
 # Created: 2022-06-06 11:10:28(+0800)
 #
-# Last-Updated: 2022-06-13 16:31:16(+0800) [by Fred Qi]
-#     Update #: 323
+# Last-Updated: 2022-07-02 16:11:21(+0800) [by Fred Qi]
+#     Update #: 345
 # 
 
 # Commentary:
@@ -21,6 +21,7 @@
 import csv
 import bisect
 from os import path
+from pathlib import PureWindowsPath, PurePath
 
 
 def load_classification_result(datafile):
@@ -33,9 +34,8 @@ def load_classification_result(datafile):
             if 2 != len(fields):
                 continue
             filename, label = fields[0], int(fields[1])
-            pathname, _ = path.splitext(filename)
-            basename = path.basename(pathname)
-            # print(ln, label, len(f'{label}'), sep=',')
+            pp = PureWindowsPath(filename).as_posix()
+            basename = PurePath(pp).stem
             results[basename] = label
     return results
 
@@ -110,8 +110,8 @@ class LeaderBoard(object):
             if acc > 0:
                 for idx in range(len(self.leaderboard)):
                     if self.leaderboard[idx].student_id == stu_id:
-                        break
-                self.leaderboard.pop(idx)
+                        self.leaderboard.pop(idx)
+                        break                
             bisect.insort_left(self.leaderboard, item)
             
 

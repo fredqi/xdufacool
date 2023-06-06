@@ -4,8 +4,8 @@
 # Author: Fred Qi
 # Created: 2021-01-10 20:41:42(+0800)
 #
-# Last-Updated: 2023-03-16 18:55:23(+0800) [by Fred Qi]
-#     Update #: 946
+# Last-Updated: 2023-06-06 19:11:20(+0800) [by Fred Qi]
+#     Update #: 948
 # 
 
 # Commentary:
@@ -409,9 +409,9 @@ def organize(classes, homework, **kwargs):
         class_name = cls.split(".")[0]
         if not os.path.exists(class_name):
             os.mkdir(class_name)
-        hw_path = os.path.join(class_name, homework)
-        if not os.path.exists(hw_path):
-            os.mkdir(hw_path)
+        # hw_path = os.path.join(class_name, homework)
+        # if not os.path.exists(hw_path):
+        #     os.mkdir(hw_path)
         data = load_xls(cls)
         sid_col, = find_column_index(data[0], fields)
         for row in data[1:]:
@@ -425,7 +425,7 @@ def organize(classes, homework, **kwargs):
                 if the_sid in student_classes:
                     the_cls = student_classes[the_sid]
                     hw_src = os.path.join(path, name)
-                    hw_dst = os.path.join(the_cls, homework, name)
+                    hw_dst = os.path.join(the_cls, "", name)
                     # print(f"Copying {hw_src} to {hw_dst}...")
                     shutil.copyfile(hw_src, hw_dst)
                 else:
@@ -454,6 +454,37 @@ def homework(scores, homework, **kwargs):
 
     write_xls(data, scores)
         
-    
+
+@xduscore.command()
+@click.argument("accuracies", nargs=1, type=click.Path(exists=True))
+@click.argument("sheet", nargs=1, type=click.Path(exists=True))
+def challenge(accuracies, sheet, **kwargs):
+    """Assign scores based on challenge accuracies."""
+    with open(accuracies) as istream:
+        reader = csv.reader(istream)
+        header = next(reader)
+        scores = {}
+        for row in reader:
+            sid = row[0]
+            sc = round(float(row[1])*100)
+            if sc > 95:
+                sc = 100
+            if sc < 60:
+                sc = 60
+            scores[sid] = sc
+    # print("\n".join(scores.keys()))
+
+    data = load_xls(sheet)
+    fields = ["学号", "竞赛", "姓名"]
+    sid_col, score_col, name_col = find_column_index(data[0], fields)
+    for idx in range(1, len(data)):
+        sid = str(int(data[idx][sid_col]))
+        if sid in scores:
+            data[idx][score_col] = scores[sid]
+        else:
+            print(sid, data[idx][sid_col], data[idx][name_col])
+
+    write_xls(data, "AISE-2022-updated.xls")
+
 # 
 # score_helper.py ends here
