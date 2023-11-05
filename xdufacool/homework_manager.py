@@ -8,8 +8,8 @@
 # ----------------------------------------------------------------------
 # ## CHANGE LOG
 # ----------------------------------------------------------------------
-# Last-Updated: 2023-06-06 19:10:54(+0800) [by Fred Qi]
-#     Update #: 2534
+# Last-Updated: 2023-11-05 19:38:17(+0800) [by Fred Qi]
+#     Update #: 2699
 # ----------------------------------------------------------------------
 import re
 import sys
@@ -103,7 +103,7 @@ class Homework():
     def __init__(self, batch=False, **kwargs):
         """Initialize homework with a given dict."""
         for key, value in kwargs.items():
-            setattr(self, key, value)
+            setattr(self, key, value)            
         
         if not hasattr(self, 'descriptor'):
             desc = f'{self.subject}-{self.homework_id}'
@@ -120,7 +120,7 @@ class Homework():
             if hasattr(self, 'date_after'):
                 mconds.append(f'SINCE {self.date_after}')
             if not batch:
-                mconds.append(f'TO {Homework.email_teacher}')
+                mconds.append('Unseen')
             self.conditions = ' '.join(mconds)
 
         if hasattr(self, 'gt_class'):
@@ -142,6 +142,7 @@ class Submission():
         self.body = None
         self.data = dict()
         self.emails = list()
+        self.responses = list()
         self.accs = list()
         # Update the homework instance
         self.update(email_uid, header)
@@ -169,6 +170,7 @@ class Submission():
         if header['from'] == Homework.email_teacher:
             if 'in-reply-to' in header:
                 self.replied.add(header['in-reply-to'])
+            self.responses.append(email_uid)
             return
 
         update_info = False
@@ -297,13 +299,18 @@ class HomeworkManager:
         cfg_general, cfg_email = config['general'], config['email']
         Homework.init_static(config['teacher']['name'],
                              cfg_email['address'], cfg_email['template'])
+        # Setup the mail_helper
+        self.testing = cfg_general.getboolean('testing')        
+        self.batch   = cfg_general.getboolean('batch')
+        self.download   = cfg_general['download']
+        options = {'testing': self.testing,
+                   'batch': self.batch,
+                   'download': self.download}
+        logging.debug(f"  - options: {options}")
         for hw_key in cfg_general['homeworks'].split(','):
             hw_key = hw_key.strip()
             cfg_homework = config[f"homework_{hw_key}"]
-            self.homeworks[hw_key] = Homework(**cfg_homework)
-        # Setup the mail_helper
-        self.testing = cfg_general.getboolean('testing')
-        logging.debug(f"  testing mode = {self.testing}")
+            self.homeworks[hw_key] = Homework(batch=self.batch, **cfg_homework)
         proxy = None
         if 'proxy_ip' in cfg_general:
             proxy = cfg_general['proxy_ip'], cfg_general.getint('proxy_port')
@@ -319,48 +326,74 @@ class HomeworkManager:
     def check_headers(self, homework):
         """Fetch email headers."""
         logging.debug(f"  Search {homework.conditions}")
-        email_uids = self.mail_helper.search(self.mail_label, homework.conditions)
-        logging.debug(f"    {len(email_uids)} emails to be checked.")
+        uids_email = self.mail_helper.search(self.mail_label, homework.conditions)
+        logging.debug(f"    {len(uids_email)} emails to be checked.")
         submissions = self.submissions.get(homework.descriptor, {})
-        for euid in email_uids:
+        uids_pending = []
+        for euid in uids_email:
             header = self.mail_helper.fetch_header(euid)
             student_id, _ = parse_subject(header['subject'])
             if student_id is None:
                 logging.warning(f'  {euid} {header["subject"]} {header["date"]}')
                 continue            
+            if Homework.email_teacher == header['from'] or student_id in submissions:
+                uids_pending.append((euid, student_id, header))
+                continue
+            logging.debug(f'  {euid} {header["subject"]}')
+            submissions[student_id] = Submission(euid, header)
+        for euid, student_id, header in uids_pending:
             logging.debug(f'  {euid} {header["subject"]}')
             if student_id not in submissions:
-                if header['from'] != Homework.email_teacher:
-                    submissions[student_id] = Submission(euid, header)
-            else:
-                euid_prev = submissions[student_id].update(euid, header)
-                if euid_prev:
-                    self.mail_helper.flag(euid_prev, ['Seen', 'Answered'])
-                    logging.debug(f"  Flagged {euid_prev} {student_id} as answered.")
+                continue
+            logging.debug(f'  - update records of {student_id}...')
+            euid_prev = submissions[student_id].update(euid, header)
+            if euid_prev:                
+                self.mail_helper.flag(euid_prev, ['Seen', 'Answered'])
+                logging.debug(f"  - flagged {euid_prev} as answered.")
         self.submissions[homework.descriptor] = submissions
 
     def send_confirmation(self, homework):
         """Send confirmation to unreplied emails."""
-        submissions = self.submissions.get(homework.descriptor, {})
-        logging.debug(f"    {len(submissions)} confirmations to be sent.")
+        # TODO: batch mode attachments download
+        submissions = self.submissions.get(homework.descriptor, {})        
+        queue_to_reply = []
         for student_id, hw in submissions.items():
-            if homework.download:
-                for euid in hw.emails:
-                    # print(euid, hw.latest_email_uid)
+            if not hw.is_confirmed():
+                queue_to_reply.append((student_id, hw))
+            else:
+                for euid in hw.emails + hw.responses:
+                    self.mail_helper.flag(euid, ['Seen'])                    
+        logging.debug(f"    {len(queue_to_reply)} emails to be replied.")
+
+        for student_id, hw in queue_to_reply:
+            download_list = []
+            if 'latest' == self.download:
+                download_list += [hw.latest_email_uid]
+            elif 'all' == self.download:
+                download_list += hw.emails
+            print(download_list)
+            
+            for euid in download_list:
+                logging.debug(f"  {euid} {hw.info['subject']} ({hw.info['size'].strip()}) download started.")
+                if not self.testing:
                     body, attachments = self.mail_helper.fetch_email(euid)
                     hw.save(body, attachments, homework, overwrite=True)
-                    logging.debug(f"  {hw.info['subject']}/{euid} downloaded.")
-                    if hasattr(homework, 'metric'):
-                        hw.eval_submission(homework.metric, homework.leaderboard)
+                    logging.debug(f"  {euid} {hw.info['subject']} download finished.")
+                else:
+                    logging.debug(f"  {euid} {hw.info['subject']} download to be finished.")
+
+            if hasattr(homework, 'metric') and not self.testing:
+                hw.eval_submission(homework.metric, homework.leaderboard)
                 if hw.accs:
                     print(hw.student_id, max(hw.accs), len(hw.accs), len(hw.emails), sep=',')
-            if not hw.is_confirmed():
-                self.mail_helper.flag(hw.latest_email_uid, ['Unseen', 'Unanswered'])
+
+            if not self.testing:
                 to_addr, msg = hw.create_confirmation()
-                if not self.testing:
-                    self.mail_helper.send_email(Homework.email_teacher, to_addr, msg)
-                    self.mail_helper.flag(hw.latest_email_uid, ['Seen', 'Answered'])
-                    logging.debug(f"  {hw.info['subject']} emails confirmed.")
+                self.mail_helper.send_email(Homework.email_teacher, to_addr, msg)
+                self.mail_helper.flag(hw.latest_email_uid, ['Seen'])
+                logging.debug(f"  {hw.latest_email_uid} {hw.info['subject']} confirmation sent.")
+            else:
+                logging.debug(f"  {hw.latest_email_uid} {hw.info['subject']} to be confirmed.")
 
     def quit(self):
         self.mail_helper.quit()

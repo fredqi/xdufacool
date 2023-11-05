@@ -1,3 +1,4 @@
+import re
 import datetime
 import socks
 import socket
@@ -16,6 +17,8 @@ class MailHelper:
 
     def __init__(self, imapserver, smtpserver=None, proxy=None):
         self._flags = set(["Seen", "Answered", "Flagged"])
+        # mail size is following RFC822.SIZE
+        self.re_size = re.compile(r'RFC822.SIZE (\d+)', re.IGNORECASE)
         if proxy:
             proxy_ip, proxy_port = proxy
             socks.setdefaultproxy(socks.SOCKS5, proxy_ip, proxy_port)
@@ -72,10 +75,11 @@ class MailHelper:
                 header[key.lower() + "name"] = MailHelper.iconv_header(name)
             else:
                 header[key.lower()] = MailHelper.iconv_header(val)
-
-        # header['size'] = long(data[0][0].split()[2])
-        header['size'] = int(data[0][0].split()[2])
-
+        
+        size_matcher = self.re_size.search(str(data[0][0], 'utf-8'))
+        if size_matcher:
+            size = int(size_matcher.group(1))
+            header['size'] = f"{size/1024:6.3g} KB" if size < 1e6 else f"{size/1024/1024:6.3g} MB"
         # for key, val in header.items():
         #     print(key, type(val), val)
 
