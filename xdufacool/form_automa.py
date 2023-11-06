@@ -4,8 +4,8 @@
 # Author: Fred Qi
 # Created: 2022-08-21 16:02:49(+0800)
 #
-# Last-Updated: 2023-06-06 19:08:07(+0800) [by Fred Qi]
-#     Update #: 2253
+# Last-Updated: 2023-11-06 15:01:34(+0800) [by Fred Qi]
+#     Update #: 2444
 # 
 
 # Commentary:
@@ -23,6 +23,8 @@ import sys
 import fitz
 import openpyxl
 import warnings
+import markdown
+import frontmatter
 from os import path
 from glob import glob
 from dataclasses import dataclass, field, asdict, fields
@@ -46,8 +48,10 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.enum.table import WD_TABLE_ALIGNMENT
 from docx.enum.table import WD_ALIGN_VERTICAL
 
+# pip install mistletoe-ebp
 import mistletoe
-from mistletoe.block_tokens import Heading, Paragraph, HTMLBlock
+# from mistletoe.block_tokens import Heading, Paragraph, HTMLBlock
+from mistletoe.block_tokens import Heading, Paragraph, HTMLBlock, FrontMatter
 from mistletoe.block_tokens_ext import Table
 from mistletoe.span_tokens import RawText, LineBreak, Strong, Emphasis, HTMLSpan
 
@@ -63,9 +67,96 @@ elif 'win32' == sys.platform:
     WORKDIR = "C:\\Users\\fredq\\github\\senior-design"
     TEACHDIR = "C:\\Users\\fredq\\github\\teaching"
 
-DATA_FILE = path.join(TEACHDIR, "毕业设计表单数据-2023.xlsx")
-TEMPLATE_DIR = path.join(WORKDIR, "templates")
+DATA_FILE = path.join(TEACHDIR, "毕业设计表单数据-2024.xlsx")
+TEMPLATE_DIR = path.join(WORKDIR, "")
 OUTPUT_DIR = WORKDIR
+
+
+class MarkdownDocxMerger:
+    def __init__(self, config_path):
+        self.config = self.load_config(config_path)
+        self.templates_folder = self.config.get('Settings', 'templates_folder')
+        self.templates = self.load_templates()
+        self.sections = {}
+
+    @staticmethod
+    def get_text(token):
+        if isinstance(token, RawText):
+            return token.content
+        elif not isinstance(token, LineBreak):
+            raw_text = token.children[0]
+            assert isinstance(raw_text, RawText)
+            return raw_text.content.strip()
+
+    def load_config(self, config_path):
+        config = ConfigParser()
+        config.read(config_path)
+        return config
+
+    def load_templates(self):
+        # Load templates from a specified folder
+        templates = {}
+        for template_name in self.config['Templates']:
+            template_path = path.join(self.templates_folder,
+                                      self.config.get('Templates', template_name))
+            templates[template_name] = template_path
+        return templates
+
+    def parse_markdown(self, markdown_path):
+        # with open(markdown_path, 'r', encoding='utf-8') as md_file:
+        with open(markdown_path, 'r') as istream:
+            text = istream.read()
+            doc = mistletoe.Document.read(text, front_matter=True)
+            metadata = doc.front_matter.get_data()
+            sections = {}
+            sec_title, key = 'section', 'default'
+            for item in doc.children:
+                if isinstance(item, Heading):
+                    if 1 == item.level:
+                        sec_title = self.get_text(item)
+                        sections[sec_title] = {}
+                    elif 2 == item.level:
+                        key = self.get_text(item)
+                        print(key)
+                        sections[sec_title][key] = []                        
+                else:
+                    sections[sec_title][key].append(self.get_text(item))                    
+        # Return a dictionary containing both metadata and sections
+        return metadata, sections
+
+    def generate_docx(self, markdown_path):
+        metadata, sections = self.parse_markdown(markdown_path)
+            
+        for sec_title, content in sections.items():
+            # print(sec_title, content)
+            if sec_title in self.templates:
+                data = {key: value for key, value in metadata.items()}
+                data.update(content)
+                self.merge_and_create_docx(sec_title, data)
+
+    def merge_and_create_docx(self, sec_title, data):
+        # Perform the mail merge
+        template_path = self.templates[sec_title]
+        merge_data = {}
+        for key, value in data.items():
+            field = self.config.get('Mappings', key)
+            if 'date' == field:
+                merge_data['year'] = str(value.year)
+                merge_data['year_p'] = str(value.year - 1)
+            if isinstance(value, list):
+                merge_data[field] = '\n'.join(value)
+            else:
+                merge_data[field] = str(value)
+            
+        with MailMerge(template_path) as document:
+            missing_fields = document.get_merge_fields() - merge_data.keys()
+            if missing_fields:
+                print(sec_title, missing_fields)
+            document.merge(**merge_data)
+            # Optionally, handle the content if needed to be inserted into the document
+            output_filename = f"{sec_title}-{data.get('姓名', '姓名')}.docx"
+            document.write(output_filename)
+            print(f"Generated file: {output_filename}")
 
 
 class Markdown2Docx(object):
@@ -292,7 +383,8 @@ def document_merge(template, data):
             print(output_filename, missing_fields)
         document.merge(**row)
         sid, name = row['id'], row['name']
-        output_dir = path.join(OUTPUT_DIR, f'{sid}-{name}')
+        title = row['title']
+        output_dir = path.join(OUTPUT_DIR, f'{title}')
         if not path.exists(output_dir):
             os.mkdir(output_dir)
         # print(output_filename, sid, name, row['date'])
@@ -304,6 +396,7 @@ def template_dict(template_dir, sheets):
     """Create a dictionary of templates."""
     sheet_names = list(sheets)
     template_files = glob(f"{template_dir}/*.docx")
+    print(template_dir, "\n".join(template_files))
     templates = {}
     for filename in template_files:
         for name in sheet_names:
@@ -316,7 +409,8 @@ def template_dict(template_dir, sheets):
 def form_auto_merge(sheets=['日常考核']):
     # sheet_names = ['日常考核', '软硬件验收', '中期检查', '指导教师评分表', '评阅评分表', '答辩登记表']
     templates = template_dict(TEMPLATE_DIR, sheets)
-    # print("\n".join([f'{k}={v}' for k,v in templates.items()]))
+    print(sheets)
+    print("\n".join([f'{k}={v}' for k,v in templates.items()]))
     fields, wb = load_form_data(DATA_FILE)
     # print(fields)
     for sheet_name in sheets:
@@ -731,7 +825,8 @@ if __name__ == "__main__":
     #         print(course)
     #         course.compose_summary(template_filepath, terms[course.semester])
 
-    sheets = ['日常考核', '软硬件验收', '中期检查', '指导教师评分表', '评阅评分表', '答辩登记表']
+    # sheets = ['日常考核', '软硬件验收', '中期检查', '指导教师评分表', '评阅评分表', '答辩登记表']
+    sheets = ['任务书']
     form_auto_merge(sheets)
     # # convert_merge_replace()
     # # merge_replacements("16020520025-马丁扬")
