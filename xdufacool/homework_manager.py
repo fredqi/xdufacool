@@ -8,8 +8,8 @@
 # ----------------------------------------------------------------------
 # ## CHANGE LOG
 # ----------------------------------------------------------------------
-# Last-Updated: 2023-11-05 19:38:17(+0800) [by Fred Qi]
-#     Update #: 2699
+# Last-Updated: 2024-01-21 23:17:04(+0800) [by Fred Qi]
+#     Update #: 2706
 # ----------------------------------------------------------------------
 import re
 import sys
@@ -52,7 +52,8 @@ def parse_subject(subject):
     <school> = 02 means a student of School of Electronic Engineering
     """
     if not hasattr(parse_subject, 're_id'):
-        parse_subject.re_id = re.compile(r'(?P<stuid>[0-9xtXT]{9,12}|X{3,5})')
+        # parse_subject.re_id = re.compile(r'(?P<stuid>[0-9xtXT]{9,12}|X{3,5})')
+        parse_subject.re_id = re.compile(r'(?P<stuid>H?[0-9]{8,11}X?)', re.IGNORECASE)
     # if not hasattr(parse_subject, 'year'):
     #     parse_subject.year = re.compile(r'(?P<year>2020)')
     student_id, name = None, None

@@ -21,23 +21,36 @@ class TestFunctions(TestCase):
         self.assertEqual(sha256, sha256_gt, msg=msg)
 
     def test_parse_subject(self):
-        subject = "[PRML] HW1602-14020150058-周贤军"
-        student_id_ref = "14020150058"
-        name_ref = "周贤军"
+        subject = "PRML-HW23E03-21009100517-谢某甲"
+        student_id_ref = "21009100517"
+        name_ref = "谢某甲"
         student_id, name = parse_subject(subject)
         self.assertEqual(student_id, student_id_ref, "Student ID is wrong.")
         self.assertEqual(name, name_ref, "Name is wrong.")
 
-        student_id, _ = parse_subject("[PRML] HW1602-1402015005-周贤军")
-        self.assertEqual(student_id, "1402015005", msg="Student ID is wrong.")
+    def test_parse_subject_STE(self):
+        subject = "MLEN-HW23R-H00392690-吴某丙"
+        student_id_ref = "H00392690"
+        name_ref = "吴某丙"
+        student_id, name = parse_subject(subject)
+        self.assertEqual(student_id, student_id_ref, "Student ID is wrong.")
+        self.assertEqual(name, name_ref, "Name is wrong.")
+
+    def test_parse_subject_pregr(self):
+        subject = "IMGNAV23-23171210356X-武某丁-MOTRv2"
+        student_id_ref = "23171210356X"
+        name_ref = "武某丁"
+        student_id, name = parse_subject(subject)
+        self.assertEqual(student_id, student_id_ref, "Student ID is wrong.")
+        self.assertEqual(name, name_ref, "Name is wrong.")
 
 
 class TestHomework(TestCase):
     def setUp(self):
         self.header = dict(toname="fred.qi",
-                           name="周晨",
-                           fromname="戏子",
-                           subject=" [PRML] HW1602-14020150099-周晨",
+                           name="周某",
+                           fromname="甲子",
+                           subject=" [PRML] HW1602-14020150099-周某",
                            to="fred.qi@ieee.org",
                            time=datetime.datetime(2016, 11, 12, 3, 29, 23),
                            date="Sat, 12 Nov 2016 11:29:23 +0800",
