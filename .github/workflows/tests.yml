@@ -73,7 +73,7 @@ jobs:
       REPO_NAME: ${{ github.event.repository.name }}
     
     steps:
-    - uses: actions/download-artifact@v3
+    - uses: actions/download-artifact@v4.1.7
       with:
         name: logs
 
