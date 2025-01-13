@@ -31,6 +31,7 @@ import nbformat
 from nbconvert import LatexExporter
 import subprocess
 import logging
+import zipfile
 
 # Configure logging
 logging.basicConfig(
@@ -600,53 +601,49 @@ class StudentMapper:
         return None
 
 def formalize_homework_submissions(assignment_id, mapping_csv, use_chinese_names=False):
-    """Formalize homework submissions using student mapping."""
+    """Formalize homework submissions using student mapping.  Handles both zip and non-zip submissions."""
     # Initialize the StudentMapper
     student_mapper = StudentMapper(mapping_csv)
 
-    # Find all directories and files matching the assignment pattern
     base_dir = f"MLEN-{assignment_id}"
-    if not os.path.exists(base_dir):
-        logging.error(f"Assignment directory {base_dir} not found")
-        return 0
-
-    formalized_count = 0
-    # Create formalized directory structure (parallel to base_dir)
     formalized_dir = os.path.join(os.path.dirname(base_dir), f"MLEN-{assignment_id}-formalized")
     os.makedirs(formalized_dir, exist_ok=True)
 
-    # Find all zip files
-    for root, dirs, files in os.walk(base_dir):
-        for file in files:
-            if not file.endswith('.zip'):
-                logging.info(f"  - Skipping: {file}")
-                continue
-            logging.info(f"  - Processing: {file} {root}")
+    formalized_count = 0
 
+    for root, _, files in os.walk(base_dir):
+        for file in files:
+            full_path = os.path.join(root, file)
             student_info = student_mapper.get_student_info(file, root)
+
             if not student_info:
-                logging.warning(f"  ! No mapping found for file: {file}")
+                logging.warning(f"No mapping found for file: {file}")
                 continue
 
             xidian_id, english_name = student_info
-
-            # Create formalized filename
-            formalized_name = f"MLEN-{assignment_id}-{xidian_id}-{english_name}.zip"
-
-            # Create student directory in formalized structure using only xidian_id
             student_dir = os.path.join(formalized_dir, xidian_id)
             os.makedirs(student_dir, exist_ok=True)
 
-            # Copy and rename the zip file
-            src_path = os.path.join(root, file)
-            dst_path = os.path.join(student_dir, formalized_name)
-
-            try:
-                shutil.copy2(src_path, dst_path)
-                formalized_count += 1
-                logging.info(f"  + Formalized: {file} -> {formalized_name}")
-            except OSError as e:
-                logging.error(f"  ! Error copying {file}: {e}")
+            if file.endswith(".zip"):
+                formalized_name = f"MLEN-{assignment_id}-{xidian_id}-{english_name}.zip"
+                dst_path = os.path.join(student_dir, formalized_name)
+                try:
+                    shutil.copy2(full_path, dst_path)
+                    formalized_count += 1
+                    logging.info(f"Formalized: {file} -> {formalized_name}")
+                except OSError as e:
+                    logging.error(f"Error copying {file}: {e}")
+            elif file.endswith((".pdf")):
+                formalized_name = f"MLEN-{assignment_id}-{xidian_id}-{english_name}.pdf"
+                dst_path = os.path.join(student_dir, formalized_name)
+                try:
+                    shutil.copy2(full_path, dst_path)
+                    formalized_count += 1
+                    logging.info(f"Formalized: {file} -> {formalized_name}")
+                except OSError as e:
+                    logging.error(f"Error copying {file}: {e}")
+            else:
+                logging.info(f"Skipping file {file} (not a zip or pdf)")
 
     return formalized_count
 
@@ -687,21 +684,72 @@ def generate_merged_submissions(assignments, base_dir):
         merge_pdfs(title, pdf_files, output_pdf)
         logging.info(f"Created merged PDF for {assignment_id}: {output_pdf}")
 
+def collect_reports(formalized_dir):
+    """Collects PDF report files from a formalized assignment directory.
+
+    Args:
+        formalized_dir: The directory containing student report submissions.
+
+    Returns:
+        list: A list of PDF file paths.  Returns an empty list if no suitable files are found.
+    """
+    report_files = []
+    for root, _, files in os.walk(formalized_dir):
+        for filename in files:
+            if filename.endswith(".pdf"):
+                filepath = os.path.join(root, filename)
+                parts = os.path.basename(filename).split("-")
+                student_id, student_name = parts[2], parts[3]
+                report_relpath = os.path.relpath(filepath, formalized_dir)
+                item = (report_relpath, student_name, student_id, "Report")
+                report_files.append(item)
+            elif filename.endswith(".zip"):
+                zip_filepath = os.path.join(root, filename)
+                parts = os.path.basename(filename).split("-")
+                student_id, student_name = parts[2], parts[3]
+                try:
+                    with ZipFile(zip_filepath, 'r') as zip_ref:
+                        for member in zip_ref.infolist():
+                            if member.filename.endswith(".pdf"):
+                                extracted_filepath = os.path.join(root, member.filename)
+                                zip_ref.extract(member, root)
+                                report_relpath = os.path.relpath(extracted_filepath, formalized_dir)
+                                item = (report_relpath, student_name, student_id, "Report")
+                                report_files.append(item)
+                                break  # Extract only the first PDF
+                except zipfile.BadZipFile as e:
+                    logging.error(f"Error decompressing zip file {zip_filepath}: {e}")
+    return report_files
+
 if __name__ == "__main__":
     mapping_csv = "student_mapping.csv"
     base_dir = "."
 
-    assignments = ["HW24E01", "HW24E02", "HW24E03", "HW24E04"]
-    for assignment_id in assignments:
-        # Clean up existing files first
-        cleaned = clear_homework_path(assignment_id)
-        logging.info(f"Cleaned {cleaned} directories")
+    assignments = ["HW24E01", "HW24E02", "HW24E03", "HW24E04", "HW24E05"]
+    for assignment_id in assignments[-1:]:
+        ## Clean up existing files first
+        # cleaned = clear_homework_path(assignment_id)
+        # logging.info(f"Cleaned {cleaned} directories")
         
         # Formalize the submissions
         formalized = formalize_homework_submissions(assignment_id, mapping_csv)
         logging.info(f"Formalized {formalized} submissions")
 
-    # Generate merged submissions for all formalized homeworks
-    generate_merged_submissions(assignments, base_dir)
+        # Report processing
+        formalized_report_dir = os.path.join(base_dir, f"MLEN-{assignment_id}-formalized")
+        if os.path.exists(formalized_report_dir):
+            report_files = collect_reports(formalized_report_dir)
+            if report_files:
+                title = f"MLEN-{assignment_id}: Reports"
+                merged_report_path = os.path.join(formalized_report_dir, f"MLEN-{assignment_id}-reports.pdf")
+                merge_pdfs(title, report_files, merged_report_path)
+                logging.info(f"Created merged PDF for {assignment_id}: {merged_report_path}")
+            else:
+                logging.warning(f"No report files found in {formalized_report_dir}")
+        else:
+            logging.warning(f"Formalized directory not found for report assignment: {formalized_report_dir}")
+
+    # # Generate merged submissions for all formalized homeworks
+    # generate_merged_submissions(assignments[:4], base_dir)
 
 # collect_local.py ends here
