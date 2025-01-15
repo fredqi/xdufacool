@@ -35,9 +35,11 @@ import zipfile
 from datetime import date
 
 try:
-    from xdufacool.latex_converter import LaTeXConverter
+    from xdufacool.converters import LaTeXConverter    
+    from xdufacool.converters import NotebookConverter
 except ImportError:
-    from latex_converter import LaTeXConverter
+    from .converters import LaTeXConverter
+    from .converters import NotebookConverter
 
 # Configure logging
 logging.basicConfig(
@@ -59,6 +61,9 @@ for handler in logging.getLogger().handlers:
 # Set the level for stdout handler to WARNING
 if stdout_handler:
     stdout_handler.setLevel(logging.WARNING)
+
+# Add the parent directory of xdufacool to sys.path
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 def temporal_func():
     classid = sys.argv[1]
@@ -282,103 +287,69 @@ def truncate_long_outputs(nb, max_lines=128):
 
 def process_ipynb_submission(ipynb_file, student_name, student_id, assignment_title, assignment_dir, figures):
     """Convert a single ipynb file to LaTeX format, compile to PDF, and ensure figures are available."""
-    
-    def remove_hidden_folders(directory):
-        """Remove hidden folders in the specified directory."""
-        for item in os.listdir(directory):
-            item_path = os.path.join(directory, item)
-            if item.startswith('.') and os.path.isdir(item_path):
-                shutil.rmtree(item_path)  # Remove the hidden directory
 
     try:
-        # Remove hidden folders in the directory of the input zip file
-        zip_dir = os.path.dirname(ipynb_file)  # Get the directory of the input zip file
-        # remove_hidden_folders(zip_dir)  # Call the function to remove hidden folders
+        # Initialize NotebookConverter
+        converter = NotebookConverter()
 
         # Move the unzipped file to the directory containing the input zip file
-        unzipped_file = os.path.basename(ipynb_file)  # Get the basename of the ipynb file
-        target_path = os.path.join(zip_dir, unzipped_file)  # Target path in the zip directory
-        os.rename(ipynb_file, target_path)  # Move the file
+        zip_dir = os.path.dirname(ipynb_file)
+        unzipped_file = os.path.basename(ipynb_file)
+        target_path = os.path.join(zip_dir, unzipped_file)
+        os.rename(ipynb_file, target_path)
 
-        with open(target_path, 'r', encoding='utf-8') as f:  # Use the moved file
+        # Set metadata for the notebook
+        with open(target_path, 'r', encoding='utf-8') as f:
             nb = nbformat.read(f, as_version=4)
+        if 'metadata' not in nb:
+            nb.metadata = {}
+        nb.metadata['title'] = assignment_title
+        nb.metadata['authors'] = [{"name": f"{student_name} (ID: {student_id})"}]
+        nb.metadata['date'] = ""
+        with open(target_path, 'w', encoding='utf-8') as f:
+            nbformat.write(nb, f)
 
-            # Truncate long outputs
-            truncate_long_outputs(nb)
+        # Convert to LaTeX
+        output_dir = os.path.dirname(target_path)
+        tex_file = converter.convert_notebook(target_path, output_dir, figures)
 
-            # Set metadata using the provided arguments
-            if 'metadata' not in nb:
-                nb.metadata = {}
-            nb.metadata['title'] = assignment_title
-            nb.metadata['authors'] = [{"name": f"{student_name} (ID: {student_id})"}]
-            nb.metadata['date'] = ""
+        if tex_file is None:
+            return None
 
-            # Configure the LaTeX exporter with custom template
-            latex_exporter = LatexExporter()
-            latex_exporter.exclude_input = False
-            latex_exporter.exclude_output = False
-            
-            # Convert to LaTeX
-            (body, resources) = latex_exporter.from_notebook_node(nb)
+        # Store current directory
+        original_dir = os.getcwd()
 
-            # Ensure output directory exists
-            output_dir = os.path.dirname(target_path)  # Use the new target path
-            os.makedirs(output_dir, exist_ok=True)
-            
-            # Ensure required figures are available
-            ensure_figures_available(assignment_dir, output_dir, figures)
-            
-            # Create figures directory if it doesn't exist
-            figures_dir = os.path.join(output_dir, 'figures')
-            os.makedirs(figures_dir, exist_ok=True)
-            
-            # Save figures if they exist in resources
-            if 'outputs' in resources:
-                for filename, data in resources['outputs'].items():
-                    figure_path = os.path.join(figures_dir, filename)
-                    with open(figure_path, 'wb') as f:
-                        f.write(data)
-                    
-                    # Update the figure path in LaTeX content to use relative path
-                    body = body.replace(filename, os.path.join('figures', filename))
-            
-            # Save LaTeX file
-            tex_file = target_path.replace('.ipynb', '.tex')
-            with open(tex_file, 'w', encoding='utf-8') as f:
-                f.write(body)
-            
-            # Store current directory
-            original_dir = os.getcwd()
-            
-            try:
-                os.chdir(output_dir)
-                tex_basename = os.path.basename(tex_file)
-                subprocess.run(
-                    ['latexmk', '-pdfxe', '-quiet', tex_basename],
-                    check=True,
-                    stdout=subprocess.DEVNULL,  # Suppress standard output
-                    stderr=subprocess.DEVNULL   # Suppress error output
-                )
-                # Cleanup auxiliary files, excluding checkpoints
-                for ext in ['.aux', '.log', '.out']:
-                    aux_file = tex_basename.replace('.tex', ext)
-                    if os.path.exists(aux_file):
-                        os.remove(aux_file)
-                
-                # Return the full path to the generated PDF
-                pdf_file = tex_basename.replace('.tex', '.pdf')                
-                if os.path.exists(pdf_file):
-                    pathfile = os.path.join(output_dir, pdf_file)
-                    parent_dir = os.path.dirname(output_dir)
-                    # logging.info(parent_dir)
-                    relpathfile = os.path.relpath(pathfile, parent_dir)
-                    # logging.info("PDF:", relpathfile)
-                    return relpathfile
-                    
-            finally:
-                # Always return to original directory
-                os.chdir(original_dir)
-                
+        try:
+            # Change to output directory for compilation
+            os.chdir(output_dir)
+            tex_basename = os.path.basename(tex_file)
+
+            # Compile to PDF using latexmk
+            subprocess.run(
+                ['latexmk', '-pdfxe', '-quiet', tex_basename],
+                check=True,
+                stdout=subprocess.DEVNULL,  # Suppress standard output
+                stderr=subprocess.DEVNULL   # Suppress error output
+            )
+
+            # Cleanup auxiliary files, excluding checkpoints
+            for ext in ['.aux', '.log', '.out']:
+                aux_file = tex_basename.replace('.tex', ext)
+                if os.path.exists(aux_file):
+                    os.remove(aux_file)
+
+            # Return the full path to the generated PDF
+            pdf_file = tex_basename.replace('.tex', '.pdf')
+            if os.path.exists(pdf_file):
+                pathfile = os.path.join(output_dir, pdf_file)
+                parent_dir = os.path.dirname(output_dir)
+                relpathfile = os.path.relpath(pathfile, parent_dir)
+                return relpathfile
+
+        finally:
+            # Always return to original directory
+            os.chdir(original_dir)
+
     except Exception as e:
         logging.error(f"Error processing {ipynb_file}: {str(e)}")
         return None
@@ -462,7 +433,9 @@ def process_ipynb_submissions(zip_file, assignment_dir, figures, merge=True):
     pdf_files = []    
     for ipynb_file in ipynb_files:
         # Process the notebook with extracted info
-        pdf_file = process_ipynb_submission(
+        # Create an instance of IpynbConverter
+        ipynb_converter = IpynbConverter(latex_converter)
+        pdf_file = ipynb_converter.convert_to_pdf(
             ipynb_file,
             student_name,
             student_id,

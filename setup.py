@@ -40,8 +40,21 @@ def setup_package():
                     description=__descr__,
                     license=LICENSE,
                     url=URL,
-                    packages=find_packages(include=('xdufacool',)),
-                    install_requires=['PySocks'],
+                    packages=['xdufacool'],
+                    install_requires=[
+                        'jupyter',
+                        'nbconvert',
+                        'nbformat',
+                        'jinja2',
+                        'pandas',
+                        'numpy',
+                        'ipywidgets',
+                        'jupyter_core',
+                        'pytest',
+                        'pytest-cov',
+                        'pyyaml',
+                        'requests',
+                    ],
                     # scripts
                     entry_points={'console_scripts':
                                       ['xdufacool = xdufacool.homework_manager:check_homeworks',
