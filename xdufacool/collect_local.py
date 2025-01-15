@@ -721,35 +721,472 @@ def collect_reports(formalized_dir):
                     logging.error(f"Error decompressing zip file {zip_filepath}: {e}")
     return report_files
 
-if __name__ == "__main__":
-    mapping_csv = "student_mapping.csv"
-    base_dir = "."
+class HomeworkManager:
+    """
+    Manages student homework submissions.
 
-    assignments = ["HW24E01", "HW24E02", "HW24E03", "HW24E04", "HW24E05"]
-    for assignment_id in assignments[-1:]:
-        ## Clean up existing files first
-        # cleaned = clear_homework_path(assignment_id)
-        # logging.info(f"Cleaned {cleaned} directories")
+    Organizes submissions by assignment ID and student ID, handles various
+    file formats (zip, pdf, docx, doc, rar, 7z, tar.gz), extracts zip files,
+    converts ipynb files to PDF, and selects the latest submission for
+    evaluation.
+    """
+
+    def __init__(self, base_dir, course_id, mapping_csv=None, assignment_ids=None):
+        """
+        Initializes the HomeworkManager.
+
+        Args:
+            base_dir (str): The base directory where student submissions are located.
+            course_id (str): The course identifier (e.g., 'MLEN', 'PRML').
+            mapping_csv (str, optional): Path to the CSV file containing student ID mappings.
+                                      If None, student info will be extracted from filenames.
+            assignment_ids (list, optional): List of specific assignment IDs to process.
+                                          If None, processes all assignments.
+        """
+        self.base_dir = base_dir
+        self.course_id = course_id
+        self.student_mapper = StudentMapper(mapping_csv) if mapping_csv else None
+        self.assignment_ids = assignment_ids
+        self.assignments = {}  # Dictionary to store submissions by assignment ID
+
+    def collect_submissions(self):
+        """
+        Collects and organizes homework submissions from the base directory.
+        Only processes directories that match the specified assignment IDs.
+        """
+        # If no specific assignments are specified, scan all directories
+        if not self.assignment_ids:            
+            for root, _, files in os.walk(self.base_dir):
+                for file in files:
+                    submission_info = self.extract_submission_info(file, root)
+                    if submission_info:
+                        self.add_submission(submission_info)
+            return
+
+        # Process only directories containing specified assignment IDs
+        for assignment_id in self.assignment_ids:
+            # Use glob to find all directories containing the assignment ID
+            file_pattern = f"{self.base_dir}/{self.course_id}*{assignment_id}*/**"
+            logging.info(f"Searching for files matching pattern: {file_pattern}")
+            submission_files = glob.glob(file_pattern, recursive=True)
+            for file_path in submission_files:
+                if not os.path.isfile(file_path):
+                    continue
+                logging.info(f"Processing {file_path}")
+                filename = os.path.basename(file_path)
+                root = os.path.dirname(file_path)
+                submission_info = self.extract_submission_info(filename, root)
+                logging.info(f"    {submission_info}")
+                if submission_info and submission_info["assignment_id"] == assignment_id:
+                    self.add_submission(submission_info)
+                        
+            logging.info(f"Processed submissions for assignment: {assignment_id}")
+
+    def _should_process_assignment(self, assignment_id):
+        """
+        Checks if an assignment should be processed based on assignment_ids filter.
+
+        Args:
+            assignment_id (str): The assignment ID to check.
+
+        Returns:
+            bool: True if the assignment should be processed, False otherwise.
+        """
+        return self.assignment_ids is None or assignment_id in self.assignment_ids
+
+    def extract_submission_info(self, filename, root):
+        """
+        Extracts submission information from a file.
+
+        Args:
+            filename (str): The name of the file.
+            root (str): The root directory containing the file.
+
+        Returns:
+            dict: Submission information or None if invalid
+        """
+        file_path = os.path.join(root, filename)
+        file_ext = os.path.splitext(filename)[1].lower()
         
-        # Formalize the submissions
-        formalized = formalize_homework_submissions(assignment_id, mapping_csv)
-        logging.info(f"Formalized {formalized} submissions")
+        # Skip non-submission files
+        if not self._is_valid_submission(filename, file_ext):
+            return None
+        logging.info(f"Processing file: {filename}")
+        # Extract assignment ID from filename or directory structure
+        assignment_id = self._extract_assignment_id(filename, root)
+        if not assignment_id:
+            return None
 
-        # Report processing
-        formalized_report_dir = os.path.join(base_dir, f"MLEN-{assignment_id}-formalized")
-        if os.path.exists(formalized_report_dir):
-            report_files = collect_reports(formalized_report_dir)
-            if report_files:
-                title = f"MLEN-{assignment_id}: Reports"
-                merged_report_path = os.path.join(formalized_report_dir, f"MLEN-{assignment_id}-reports.pdf")
-                merge_pdfs(title, report_files, merged_report_path)
-                logging.info(f"Created merged PDF for {assignment_id}: {merged_report_path}")
-            else:
-                logging.warning(f"No report files found in {formalized_report_dir}")
-        else:
-            logging.warning(f"Formalized directory not found for report assignment: {formalized_report_dir}")
+        # Get student information
+        student_id, student_name = self.get_student_info(filename, root)
+        if not student_id or not student_name:
+            logging.warning(f"Could not identify student for file: {filename}")
+            return None
 
-    # # Generate merged submissions for all formalized homeworks
-    # generate_merged_submissions(assignments[:4], base_dir)
+        return {
+            "file_path": file_path,
+            "file_ext": file_ext,
+            "assignment_id": assignment_id,
+            "student_id": student_id,
+            "student_name": student_name,
+            "filename": filename
+        }
 
-# collect_local.py ends here
+    def add_submission(self, submission_info):
+        """
+        Adds a submission to the assignments dictionary.
+        If multiple submissions exist for the same student and assignment,
+        keeps the latest one based on file modification time.
+
+        Args:
+            submission_info (dict): Information about the submission
+        """
+        assignment_id = submission_info["assignment_id"]
+        student_id = submission_info["student_id"]
+        file_path = submission_info["file_path"]
+        
+        # Convert absolute path to relative path and remove file_path
+        submission_info["rel_path"] = os.path.relpath(file_path, self.base_dir)
+        submission_info["timestamp"] = os.path.getmtime(file_path)
+        del submission_info["file_path"]
+
+        # Initialize assignment dictionary if it doesn't exist
+        if assignment_id not in self.assignments:
+            self.assignments[assignment_id] = {}
+
+        # Update if no previous submission exists or if new submission is more recent
+        if (student_id not in self.assignments[assignment_id] or 
+            submission_info["timestamp"] > self.assignments[assignment_id][student_id]["timestamp"]):
+            self.assignments[assignment_id][student_id] = submission_info
+            logging.info(f"Updated submission for {student_id} in {assignment_id}")
+
+    def get_absolute_path(self, submission_info):
+        """
+        Gets the absolute path for a submission.
+
+        Args:
+            submission_info (dict): Submission information containing rel_path
+
+        Returns:
+            str: Absolute path to the submission file
+        """
+        return os.path.join(self.base_dir, submission_info["rel_path"])
+
+    def extract_and_process_submissions(self):
+        """
+        Extracts zip files and processes their contents (PDF or ipynb).
+        """
+        for assignment_id, students in self.assignments.items():
+            for student_id, submission_info in students.items():
+                if submission_info["file_ext"] == ".zip":
+                    self.process_zip_submission(submission_info)
+
+    def process_zip_submission(self, submission_info):
+        """
+        Processes a zip submission: extracts contents, handles PDF and ipynb files.
+
+        Args:
+            submission_info (dict): Submission information.
+        """
+        zip_file = os.path.join(self.base_dir, submission_info["rel_path"])
+        extract_dir = os.path.splitext(zip_file)[0]  # Directory for extraction
+
+        try:
+            with ZipFile(zip_file, "r") as zip_ref:
+                zip_ref.extractall(extract_dir)
+
+            # Look for PDF or ipynb files in the extracted directory
+            extracted_files = []
+            for root, _, files in os.walk(extract_dir):
+                for file in files:
+                    extracted_files.append(os.path.join(root, file))
+
+            pdf_files = [f for f in extracted_files if f.lower().endswith(".pdf")]
+            ipynb_files = [
+                f for f in extracted_files if f.lower().endswith(".ipynb")
+            ]
+
+            if pdf_files:
+                # Use the first PDF found (if multiple, you might want to add logic)
+                submission_info["rel_path"] = os.path.relpath(pdf_files[0], self.base_dir)
+                submission_info["file_ext"] = ".pdf"
+            elif ipynb_files:
+                # Process ipynb files using process_ipynb_submission
+                assignment_dir = os.path.join(
+                    "/home/fred/lectures/PRML/exercise",
+                    submission_info["assignment_id"],
+                )
+                figures = collect_figures_from_assignment(assignment_dir)
+                pdf_file = process_ipynb_submission(
+                    ipynb_files[0],
+                    submission_info["student_name"],
+                    submission_info["student_id"],
+                    submission_info["assignment_id"],
+                    assignment_dir,
+                    figures,
+                )
+                if pdf_file:
+                    submission_info["rel_path"] = os.path.relpath(pdf_file, self.base_dir)
+                    submission_info["file_ext"] = ".pdf"
+
+        except Exception as e:
+            logging.error(f"Error processing zip submission {zip_file}: {e}")
+
+    def organize_submissions(self):
+        """
+        Organizes submissions into a formalized directory structure.
+        """
+        for assignment_id, students in self.assignments.items():
+            for student_id, submission_info in students.items():
+                self.formalize_submission(submission_info)
+
+    def formalize_submission(self, submission_info):
+        """
+        Copies a single submission to the formalized directory structure.
+
+        Args:
+            submission_info (dict): Submission information.
+        """
+        assignment_id = submission_info["assignment_id"]
+        student_id = submission_info["student_id"]
+        student_name = submission_info["student_name"]
+        file_ext = submission_info["file_ext"]
+        src_path = submission_info["file_path"]
+
+        formalized_dir = os.path.join(
+            self.base_dir, f"{self.course_id}-{assignment_id}-formalized"
+        )
+        student_dir = os.path.join(formalized_dir, student_id)
+        os.makedirs(student_dir, exist_ok=True)
+
+        formalized_name = (
+            f"{self.course_id}-{assignment_id}-{student_id}-{student_name}{file_ext}"
+        )
+        dst_path = os.path.join(student_dir, formalized_name)
+
+        try:
+            shutil.copy2(src_path, dst_path)
+            logging.info(f"Formalized: {src_path} -> {dst_path}")
+        except OSError as e:
+            logging.error(f"Error copying {src_path}: {e}")
+
+    def get_student_info(self, filename, root):
+        """
+        Gets student information from mapping, filename, or directory path.
+
+        Args:
+            filename (str): The name of the file
+            root (str): The root directory path
+
+        Returns:
+            tuple: (student_id, student_name)
+        """
+        # Try student mapper first if available
+        if self.student_mapper:
+            student_id, student_name = self.student_mapper.get_student_info(filename)
+            if student_id and student_name:
+                return student_id, student_name
+
+        # Try to extract from filename
+        try:
+            parts = filename.split('-')
+            logging.info(f"    {parts}")
+            if len(parts) >= 2:
+                student_id = parts[-2]
+                student_name = os.path.splitext(parts[-1])[0]
+                if self._is_valid_student_id(student_id):
+                    return student_id, student_name
+        except Exception:
+            pass
+
+        # Fall back to directory path
+        try:
+            # Assuming directory structure like ".../COURSEID-HWID/STUDENTID/..."
+            path_parts = root.split(os.path.sep)
+            for part in path_parts:
+                if self._is_valid_student_id(part):
+                    return part, "NoName"
+        except Exception as e:
+            logging.warning(f"Could not extract student info from path {root}: {e}")
+
+        return None, None
+
+    def _is_valid_student_id(self, student_id):
+        """
+        Validates if a string looks like a student ID.
+        
+        Args:
+            student_id (str): The potential student ID
+            
+        Returns:
+            bool: True if it looks like a valid student ID
+        """
+        # Adjust this pattern based on your student ID format
+        # Example: 8-10 digits
+        return bool(re.match(r'^\d{8,11}$', student_id))
+
+    def _extract_assignment_id(self, filename, root):
+        """
+        Extracts assignment ID from filename or directory path.
+        
+        Args:
+            filename (str): The name of the file
+            root (str): The root directory path
+            
+        Returns:
+            str: Assignment ID or None if not found
+        """
+        # Try to get from filename first
+        try:
+            parts = filename.split('-')
+            if len(parts) >= 2:
+                # Look for pattern like 'HW24A01' in filename
+                for part in parts:
+                    if re.match(r'HW\d+[A-Z]\d+', part):
+                        return part
+        except Exception:
+            pass
+
+        # Fall back to directory path
+        try:
+            # Assuming directory structure like ".../COURSEID-HWID/..." or ".../HWID/..."
+            path_parts = root.split(os.path.sep)
+            for part in path_parts:
+                if '-' in part:
+                    # Try to find assignment ID in directory name
+                    dir_parts = part.split('-')
+                    for dir_part in dir_parts:
+                        if re.match(r'HW\d+[A-Z]\d+', dir_part):
+                            return dir_part
+                elif re.match(r'HW\d+[A-Z]\d+', part):
+                    return part
+        except Exception as e:
+            logging.warning(f"Could not extract assignment ID from path {root}: {e}")
+        
+        return None
+
+    def _is_valid_submission(self, filename, file_ext):
+        """
+        Checks if a file is a valid submission based on its extension.
+
+        Args:
+            filename (str): The name of the file.
+            file_ext (str): The extension of the file.
+
+        Returns:
+            bool: True if the file is a valid submission, False otherwise.
+        """
+        # This is a placeholder implementation. You might want to implement
+        # a more robust check based on your specific requirements.
+        return file_ext in [".zip", ".pdf"]
+
+    def merge_assignment_pdfs(self):
+        """
+        Merges all PDF submissions for each assignment into a single PDF file.
+        Uses xeCJK for proper Chinese character rendering.
+        """
+        # Store current working directory
+        original_cwd = os.getcwd()
+        
+        try:
+            # Change to base_dir for proper relative path handling
+            os.chdir(self.base_dir)
+            
+            for assignment_id, students in self.assignments.items():
+                # Collect all PDF files for this assignment
+                pdf_files = []
+                for student_info in students.values():
+                    if student_info["file_ext"].lower() == ".pdf":
+                        pdf_files.append((
+                            student_info["rel_path"],
+                            student_info["student_name"],
+                            student_info["student_id"],
+                            f"{self.course_id}-{assignment_id}"
+                        ))
+
+                if not pdf_files:
+                    logging.warning(f"No PDF files found for assignment {assignment_id}")
+                    continue
+
+                # Sort files by student ID
+                pdf_files.sort(key=lambda x: x[2])  # Sort by student_id
+
+                # Create output filename
+                output_pdf = os.path.join(self.base_dir, f"{self.course_id}-{assignment_id}-merged.pdf")
+
+                # Create LaTeX preamble
+                preamble = [
+                    r'\documentclass{article}',
+                    r'\usepackage[a4paper,margin=1in]{geometry}',
+                    r'\usepackage{pdfpages}',
+                    # r'\usepackage{fancyhdr}',
+                    # r'\pagestyle{fancy}',
+                    # r'\fancyhf{}',
+                    # r'\fancyfoot[C]{\thepage}',
+                    r'\usepackage{tikz}',
+                    # r'\usepackage{xeCJK}',
+                    # r'\setCJKmainfont{Noto Serif CJK SC}',
+                    # r'\usepackage{graphicx}',
+                    r'\usepackage[colorlinks=true,linkcolor=blue]{hyperref}',
+                    r'\begin{document}',
+                    f'\\title{{{self.course_id}-{assignment_id} Submissions}}',
+                    r'\author{Compiled Submissions}',
+                    r'\maketitle',
+                    r'\tableofcontents'
+                ]
+
+                annotations = r"""pagecommand={%
+    \begin{tikzpicture}[remember picture,overlay]
+      \node[anchor=north west] at (current page.north west) {%
+        \textcolor{red}{Notation: Custom Text}};
+      \node[anchor=south east] at (current page.south east) {%
+        \thepage};
+    \end{tikzpicture}
+  }"""
+
+                # Create includepdf commands
+                include_pdfs = [
+                    f"\\includepdf[pages=-,\n{annotations},\naddtotoc={{1,section,1,{student_id},sec:{student_id}}}]{{{pdf_file}}}"
+                    for pdf_file, student_name, student_id, _ in pdf_files
+                ]
+
+                # Combine all content
+                latex_content = '\n'.join(preamble + include_pdfs + [r'\end{document}'])
+
+                # Write LaTeX file
+                tex_file = output_pdf.replace('.pdf', '.tex')
+                with open(tex_file, 'w', encoding='utf-8') as f:
+                    f.write(latex_content)
+
+                try:
+                    # Run xelatex twice to generate TOC
+                    for _ in range(2):
+                        subprocess.run([
+                            'pdflatex',
+                            # '-output-driver=xdvipdfmx -V 7',
+                            '-interaction=nonstopmode',
+                            tex_file
+                        ], check=True,
+                        stdout=subprocess.DEVNULL)
+                    
+                    logging.info(f"Successfully merged PDFs for {assignment_id} to {output_pdf}")
+                    
+                    # Clean up auxiliary files
+                    for ext in ['.aux', '.log', '.toc']:
+                        aux_file = output_pdf.replace('.pdf', ext)
+                        if os.path.exists(aux_file):
+                            os.remove(aux_file)
+                    
+                except subprocess.CalledProcessError as e:
+                    logging.error(f"Error merging PDFs for {assignment_id}: {e}")
+                    
+        finally:
+            # Restore original working directory
+            os.chdir(original_cwd)
+
+if __name__ == "__main__":
+    manager = HomeworkManager(base_dir="/home/fred/lectures/PRML/eval/2024-Autumn", course_id="PRML", assignment_ids=["HW24A01", "HW24A05"])
+    manager.collect_submissions()
+    manager.extract_and_process_submissions()
+    # manager.organize_submissions()
+    manager.merge_assignment_pdfs()  # New step to merge PDFs
