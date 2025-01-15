@@ -32,6 +32,12 @@ from nbconvert import LatexExporter
 import subprocess
 import logging
 import zipfile
+from datetime import date
+
+try:
+    from xdufacool.latex_converter import LaTeXConverter
+except ImportError:
+    from latex_converter import LaTeXConverter
 
 # Configure logging
 logging.basicConfig(
@@ -211,20 +217,6 @@ def merge_csv(csv_files):
     return results
 
 def collect_figures_from_assignment(assignment_dir):
-    """
-    Collects a list of figure filenames from the assignment directory.
-
-    Args:
-        assignment_dir (str): Path to the original assignment directory.
-
-    Returns:
-        list: List of figure filenames found in the assignment directory.
-    """
-    figures = []
-    for filename in os.listdir(assignment_dir):
-        if filename.endswith(('.png', '.jpg', '.jpeg', '.gif', '.pdf')):  # Add other image formats if needed
-            figures.append(filename)
-    return figures
     """
     Collects a list of figure filenames from the assignment directory.
 
@@ -748,6 +740,7 @@ class HomeworkManager:
         self.student_mapper = StudentMapper(mapping_csv) if mapping_csv else None
         self.assignment_ids = assignment_ids
         self.assignments = {}  # Dictionary to store submissions by assignment ID
+        self.latex_converter = LaTeXConverter()
 
     def collect_submissions(self):
         """
@@ -1083,109 +1076,53 @@ class HomeworkManager:
     def merge_assignment_pdfs(self):
         """
         Merges all PDF submissions for each assignment into a single PDF file.
-        Uses xeCJK for proper Chinese character rendering.
+        Uses LaTeXConverter for template rendering and PDF generation.
         """
-        # Store current working directory
-        original_cwd = os.getcwd()
-        
-        try:
-            # Change to base_dir for proper relative path handling
-            os.chdir(self.base_dir)
+        for assignment_id, students in self.assignments.items():
+            pdf_files = []
+            for student_id in sorted(students.keys()):  # Sort by student ID
+                student_info = students[student_id]
+                if student_info["file_ext"].lower() == ".pdf":
+                    pdf_files.append((
+                        student_info["rel_path"],
+                        student_info["student_name"],
+                        student_id
+                    ))
+
+            if not pdf_files:
+                logging.warning(f"No PDF files found for assignment {assignment_id}")
+                continue
+
+            # Render template and compile PDF
+            output_name = f"{self.course_id}-{assignment_id}-merged"
             
-            for assignment_id, students in self.assignments.items():
-                # Collect all PDF files for this assignment
-                pdf_files = []
-                for student_info in students.values():
-                    if student_info["file_ext"].lower() == ".pdf":
-                        pdf_files.append((
-                            student_info["rel_path"],
-                            student_info["student_name"],
-                            student_info["student_id"],
-                            f"{self.course_id}-{assignment_id}"
-                        ))
-
-                if not pdf_files:
-                    logging.warning(f"No PDF files found for assignment {assignment_id}")
-                    continue
-
-                # Sort files by student ID
-                pdf_files.sort(key=lambda x: x[2])  # Sort by student_id
-
-                # Create output filename
-                output_pdf = os.path.join(self.base_dir, f"{self.course_id}-{assignment_id}-merged.pdf")
-
-                # Create LaTeX preamble
-                preamble = [
-                    r'\documentclass{article}',
-                    r'\usepackage[a4paper,margin=1in]{geometry}',
-                    r'\usepackage{pdfpages}',
-                    # r'\usepackage{fancyhdr}',
-                    # r'\pagestyle{fancy}',
-                    # r'\fancyhf{}',
-                    # r'\fancyfoot[C]{\thepage}',
-                    r'\usepackage{tikz}',
-                    # r'\usepackage{xeCJK}',
-                    # r'\setCJKmainfont{Noto Serif CJK SC}',
-                    # r'\usepackage{graphicx}',
-                    r'\usepackage[colorlinks=true,linkcolor=blue]{hyperref}',
-                    r'\begin{document}',
-                    f'\\title{{{self.course_id}-{assignment_id} Submissions}}',
-                    r'\author{Compiled Submissions}',
-                    r'\maketitle',
-                    r'\tableofcontents'
-                ]
-
-                annotations = r"""pagecommand={%
-    \begin{tikzpicture}[remember picture,overlay]
-      \node[anchor=north west] at (current page.north west) {%
-        \textcolor{red}{Notation: Custom Text}};
-      \node[anchor=south east] at (current page.south east) {%
-        \thepage};
-    \end{tikzpicture}
-  }"""
-
-                # Create includepdf commands
-                include_pdfs = [
-                    f"\\includepdf[pages=-,\n{annotations},\naddtotoc={{1,section,1,{student_id},sec:{student_id}}}]{{{pdf_file}}}"
-                    for pdf_file, student_name, student_id, _ in pdf_files
-                ]
-
-                # Combine all content
-                latex_content = '\n'.join(preamble + include_pdfs + [r'\end{document}'])
-
-                # Write LaTeX file
-                tex_file = output_pdf.replace('.pdf', '.tex')
-                with open(tex_file, 'w', encoding='utf-8') as f:
-                    f.write(latex_content)
-
-                try:
-                    # Run xelatex twice to generate TOC
-                    for _ in range(2):
-                        subprocess.run([
-                            'pdflatex',
-                            # '-output-driver=xdvipdfmx -V 7',
-                            '-interaction=nonstopmode',
-                            tex_file
-                        ], check=True,
-                        stdout=subprocess.DEVNULL)
+            try:
+                latex_content = self.latex_converter.render_template(
+                    'pdfmerge.tex.j2',
+                    course_id=self.course_id,
+                    assignment_id=assignment_id,
+                    date=date.today().strftime("%Y-%m-%d"),
+                    submissions=pdf_files  # Already sorted by student_id
+                )
+                pdf_path = self.latex_converter.compile_pdf(
+                    latex_content,
+                    self.base_dir,
+                    output_name
+                )
+                
+                if pdf_path:
+                    logging.info(f"Successfully merged PDFs for {assignment_id} to {pdf_path}")
+                else:
+                    logging.error(f"Failed to merge PDFs for {assignment_id}")
                     
-                    logging.info(f"Successfully merged PDFs for {assignment_id} to {output_pdf}")
-                    
-                    # Clean up auxiliary files
-                    for ext in ['.aux', '.log', '.toc']:
-                        aux_file = output_pdf.replace('.pdf', ext)
-                        if os.path.exists(aux_file):
-                            os.remove(aux_file)
-                    
-                except subprocess.CalledProcessError as e:
-                    logging.error(f"Error merging PDFs for {assignment_id}: {e}")
-                    
-        finally:
-            # Restore original working directory
-            os.chdir(original_cwd)
+            except Exception as e:
+                logging.error(f"Error processing {assignment_id}: {e}")
+
 
 if __name__ == "__main__":
-    manager = HomeworkManager(base_dir="/home/fred/lectures/PRML/eval/2024-Autumn", course_id="PRML", assignment_ids=["HW24A01", "HW24A05"])
+    manager = HomeworkManager(base_dir="/home/fred/lectures/PRML/eval/2024-Autumn",
+                              course_id="PRML",
+                              assignment_ids=["HW24A01", "HW24A05"])
     manager.collect_submissions()
     manager.extract_and_process_submissions()
     # manager.organize_submissions()

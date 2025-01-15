@@ -75,18 +75,17 @@ class LaTeXConverter:
 
             # Compile twice for TOC
             for i in range(2):
-                result = subprocess.run([
-                    'xelatex',
-                    '-interaction=nonstopmode',
-                    tex_file
-                ], capture_output=True, text=True)
+                result = subprocess.run(
+                    ['xelatex', '-interaction=nonstopmode', '-halt-on-error', tex_file],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.PIPE,
+                    text=True
+                )
                 
                 if result.returncode != 0:
-                    # Log the error details
-                    logging.error(f"LaTeX compilation failed (attempt {i+1}):")
-                    logging.error(f"Return code: {result.returncode}")
-                    logging.error(f"Stdout: {result.stdout}")
-                    logging.error(f"Stderr: {result.stderr}")
+                    # Log only on error
+                    logging.error(f"LaTeX compilation failed ({output_name} attempt {i+1}) with return code: {result.returncode}")
+                    logging.error(f"{result.stderr.strip()}")
                     
                     # Keep log file for debugging if compilation fails
                     clean_up = False
