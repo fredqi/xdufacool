@@ -1,0 +1,70 @@
+% !TeX program = xelatex
+\documentclass[a4paper,11pt]{article}
+
+% Basic packages
+\usepackage[a4paper,margin=1in]{geometry}
+\usepackage{hyperref}
+\usepackage{graphicx}
+\usepackage{amsmath}
+\usepackage{booktabs}
+\usepackage{listings}
+\usepackage{xcolor}
+
+% CJK support
+\usepackage{xeCJK}
+\setCJKmainfont{Noto Sans CJK SC}
+\setCJKsansfont{Noto Sans CJK SC}
+\setCJKmonofont{Noto Sans Mono CJK SC}
+
+% Hyperref setup
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue,
+    filecolor=magenta,
+    urlcolor=cyan,
+    pdftitle={\VAR{title}},
+    pdfauthor={\VAR{author}},
+    pdfdate={\VAR{date}}
+}
+
+% Code listing setup
+\lstset{
+    basicstyle=\ttfamily\small,
+    breaklines=true,
+    frame=single,
+    numbers=left,
+    numberstyle=\tiny,
+    keywordstyle=\color{blue},
+    commentstyle=\color{green!60!black},
+    stringstyle=\color{purple},
+    showstringspaces=false
+}
+
+% Document info
+\title{\VAR{title}}
+\author{\VAR{author}}
+\date{\VAR{date}}
+
+\begin{document}
+
+\maketitle
+
+\BLOCK{ if abstract }
+\begin{abstract}
+\VAR{abstract}
+\end{abstract}
+\BLOCK{ endif }
+
+\BLOCK{ if toc }
+\tableofcontents
+\newpage
+\BLOCK{ endif }
+
+\VAR{content}
+
+\BLOCK{ if bibliography }
+\bibliographystyle{plain}
+\bibliography{\VAR{bibliography}}
+\BLOCK{ endif }
+
+\end{document} 

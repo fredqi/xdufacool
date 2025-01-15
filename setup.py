@@ -51,7 +51,11 @@ def setup_package():
                                        'arxort = xdufacool.organize_bib:organize_bib',
                                        'invoice_helper = xdufacool.invoice:collect_invoice']},
                     # unit tests
-                    test_suite="tests")
+                    test_suite="tests",
+                    package_data={
+                        'xdufacool': ['templates/*.tex.j2'],
+                    },
+                    include_package_data=True)
     if (len(sys.argv) >= 2
         and ('--help' in sys.argv[1:] or sys.argv[1]
              in ('--help-commands', 'egg_info', '--version'))):
