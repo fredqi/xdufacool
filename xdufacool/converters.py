@@ -4,46 +4,12 @@ import logging
 import jinja2
 import shutil
 import nbformat
+import nbconvert
 from nbconvert import LatexExporter
 from nbconvert.preprocessors import TagRemovePreprocessor
 from traitlets.config import Config
-# # from xdufacool.utils import truncate_long_outputs, ensure_figures_available
-# from jupyter_core.paths import jupyter_config_dir, jupyter_data_dir
+from pathlib import Path
 
-# def ensure_figures_available(assignment_dir, output_dir, figures):
-#     """Ensure that all required figures are present in the output directory."""
-#     for fig in figures:
-#         source_path = os.path.join(assignment_dir, fig)
-#         target_path = os.path.join(output_dir, fig)
-#         if not os.path.exists(target_path):
-#             if os.path.exists(source_path):
-#                 shutil.copy2(source_path, target_path)
-#             else:
-#                 logging.warning(f"Figure '{fig}' not found in assignment directory.")
-
-# def truncate_long_outputs(nb, max_output_lines=64):
-#     """
-#     Truncate long outputs in a notebook, handling different output types.
-
-#     Args:
-#         nb (nbformat.NotebookNode): The notebook object.
-#         max_lines_per_output (int): The maximum number of lines for text-based outputs.
-#     """
-#     for cell in nb.cells:
-#         if cell.cell_type == 'code' and 'outputs' in cell:
-#             for output in cell.outputs:
-#                 if output.output_type == 'stream':
-#                     if 'text' in output:
-#                         lines = output.text.splitlines()
-#                         if len(lines) > max_output_lines:
-#                             output.text = '\n'.join(lines[:max_output_lines] + ['... (output truncated) ...'])
-#                 elif output.output_type in ('execute_result', 'display_data'):
-#                     if 'text/plain' in output.data:
-#                         lines = output.data['text/plain'].splitlines()
-#                         if len(lines) > max_output_lines:
-#                             output.data['text/plain'] = '\n'.join(lines[:max_output_lines] + ['... (output truncated) ...'])
-#                 elif output.output_type == 'error':
-#                     pass
 
 class LaTeXConverter:
     """
@@ -108,7 +74,6 @@ class LaTeXConverter:
         try:
             os.makedirs(output_dir, exist_ok=True)
             os.chdir(output_dir)
-
             # Write LaTeX content to file
             tex_file = f"{output_name}.tex"
             with open(tex_file, 'w', encoding='utf-8') as f:
@@ -171,7 +136,7 @@ class NotebookConverter:
     Converts Jupyter Notebook files (.ipynb) to LaTeX format without re-executing cells.
     """
 
-    def __init__(self, template_file=None, exclude_input=False, exclude_output=False, max_output_lines=64):
+    def __init__(self, exclude_input=False, exclude_output=False, max_output_lines=64):
         """
         Initializes the NotebookConverter.
 
@@ -181,82 +146,55 @@ class NotebookConverter:
             exclude_output (bool, optional): Whether to exclude output cells from the output. Defaults to False.
             max_output_lines (int, optional): The maximum number of lines for text-based outputs. Defaults to 64.
         """
-
-        # Configure nbconvert
         config = Config()
-
-        # Configure TagRemovePreprocessor to remove cells with specific tags
-        config.TagRemovePreprocessor.remove_cell_tags = ("remove_cell",)
-        config.TagRemovePreprocessor.remove_all_outputs_tags = ("remove_output",)
-        config.TagRemovePreprocessor.remove_input_tags = ("remove_input",)
-        config.TagRemovePreprocessor.enabled = True
-
-        # Configure the LaTeX exporter
+        config.LatexExporter.exclude_input = exclude_input
+        config.LatexExporter.exclude_output = exclude_output
+        config.LatexExporter.template_file = "notebook.tex.j2"
+        config.LatexExporter.extra_template_paths = [os.path.join(os.path.dirname(__file__), 'templates')]
         self.exporter = LatexExporter(config=config)
-        self.exporter.exclude_input = exclude_input
-        self.exporter.exclude_output = exclude_output
-
-        if template_file:
-            self.exporter.template_file = template_file
-        
         self.max_output_lines = max_output_lines
 
-    def convert_notebook(self, ipynb_file, output_dir, figures):
+    def convert_notebook(self, ipynb_file, figures):
         """
-        Converts a Jupyter Notebook file to LaTeX format.
+        Convert a Jupyter notebook to a LaTeX file, ensuring figures are available.
 
-        Args:
-            ipynb_file (str): Path to the input .ipynb file.
-            output_dir (str): Directory to save the output LaTeX file and figures.
-            figures (list): List of required figure filenames.
+        Parameters:
+        - ipynb_file: str or Path, path to the input notebook file.
+        - figures: list, list of figure files to ensure availability.
 
         Returns:
-            str: Path to the generated LaTeX file, or None if an error occurred.
+        - Path to the generated LaTeX file.
         """
+        ipynb_file = Path(ipynb_file)
+        base_name = ipynb_file.stem
+        output_dir = ipynb_file.parent
+
         try:
-            # Read the notebook
-            with open(ipynb_file, 'r', encoding='utf-8') as f:
-                nb = nbformat.read(f, as_version=4)
+            with open(ipynb_file, 'r') as f:
+                notebook_content = nbformat.read(f, as_version=4)
+                self._truncate_long_outputs(notebook_content)
+                body, resources = self.exporter.from_notebook_node(notebook_content)
 
-            # Truncate long outputs for better readability
-            self._truncate_long_outputs(nb)
+            figures_dir = output_dir / 'figures'
+            figures_dir.mkdir(exist_ok=True)
+            self._ensure_figures_available(ipynb_file.parent, output_dir, figures)
 
-            # Convert to LaTeX
-            (body, resources) = self.exporter.from_notebook_node(nb)
-
-            # Ensure output directory exists
-            os.makedirs(output_dir, exist_ok=True)
-
-            # Ensure required figures are available
-            self._ensure_figures_available(os.path.dirname(ipynb_file), output_dir, figures)
-
-            # Create figures directory if it doesn't exist
-            figures_dir = os.path.join(output_dir, 'figures')
-            os.makedirs(figures_dir, exist_ok=True)
-
-            # Save figures if they exist in resources
             if 'outputs' in resources:
                 for filename, data in resources['outputs'].items():
-                    figure_path = os.path.join(figures_dir, filename)
-                    with open(figure_path, 'wb') as f:
+                    with open(figures_dir / filename, 'wb') as f:
                         f.write(data)
+                    body = body.replace(filename, f'figures/{filename}')
 
-                    # Update the figure path in LaTeX content to use relative path
-                    body = body.replace(filename, os.path.join('figures', filename))
-
-            # Save LaTeX file
-            tex_file = ipynb_file.replace('.ipynb', '.tex')
-            tex_file_base = os.path.basename(tex_file)
-            tex_file_path = os.path.join(output_dir, tex_file_base)
-            with open(tex_file_path, 'w', encoding='utf-8') as f:
+            latex_file = output_dir / f"{base_name}.tex"
+            with open(latex_file, 'w') as f:
                 f.write(body)
-            print(tex_file_path)
-            return tex_file_path
+
+            return latex_file
 
         except Exception as e:
-            logging.error(f"Error converting {ipynb_file}: {str(e)}")
+            print(f"An error occurred: {e}")
             return None
-        
+
     def _ensure_figures_available(self, assignment_dir, output_dir, figures):
         """Ensure that all required figures are present in the output directory."""
         for fig in figures:
@@ -302,3 +240,9 @@ class NotebookConverter:
                     elif output.output_type == 'error':
                         # You might want to handle errors differently
                         pass
+
+# if __name__ == "__main__":
+#     # notebook_file = "/home/fred/lectures/PRML/eval/2024-Autumn/PRML-HW24A02/22012100021/logistic-regression.ipynb"
+#     notebook_file = "/home/fred/lectures/PRML/eval/2024-Autumn/PRML-HW24A02/22009200070/linear-regression.ipynb"
+#     converter = NotebookConverter(exclude_input=False, exclude_output=False)
+#     converter.convert_notebook(notebook_file, [])

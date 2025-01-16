@@ -3,6 +3,7 @@ import pytest
 import nbformat
 from nbformat.v4 import new_notebook, new_markdown_cell, new_code_cell, new_output
 from xdufacool.converters import NotebookConverter
+import base64
 
 # Define metadata as a global variable
 global_metadata = {
@@ -35,10 +36,8 @@ def setup_test_environment(tmp_path):
     """
     test_dir = tmp_path / "test_files"
     notebook_file = test_dir / "test_notebook.ipynb"
-    output_dir = test_dir / "output"
-    figure_file = test_dir / "figure1.png"
+    figure_file = "figure1.png"
     test_dir.mkdir()
-    output_dir.mkdir()
 
     # Create a sample notebook with various cell types
     nb = new_notebook()
@@ -61,10 +60,13 @@ def setup_test_environment(tmp_path):
     with open(notebook_file, "w", encoding="utf-8") as f:
         nbformat.write(nb, f)
 
-    with open(figure_file, "wb") as f:
-        f.write(b"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=")
+    # Decode the base64 string
+    image_data = base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=")
+    
+    with open(test_dir / figure_file, "wb") as f:
+        f.write(image_data)
 
-    return test_dir, notebook_file, output_dir, figure_file
+    return test_dir, notebook_file, figure_file
 
 def test_convert_notebook(setup_test_environment):
     """
@@ -74,19 +76,18 @@ def test_convert_notebook(setup_test_environment):
     - Checks if the figure is copied to the output directory.
     - Performs basic checks on the content of the .tex file.
     """
-    test_dir, notebook_file, output_dir, figure_file = setup_test_environment
-    print(notebook_file, output_dir)
+    test_dir, notebook_file, figure_file = setup_test_environment
 
     converter = NotebookConverter()
-    tex_file = converter.convert_notebook(str(notebook_file), str(output_dir), ["figure1.png"])
+    tex_file = converter.convert_notebook(str(notebook_file), [figure_file])
 
     # Check if the .tex file is created
     assert os.path.exists(tex_file)
 
     # Check if the figures directory is created and contains the figure
-    figures_dir = output_dir / "figures"
+    figures_dir = test_dir / "figures"
     assert os.path.exists(figures_dir)
-    assert os.path.exists(output_dir / "figure1.png")
+    assert os.path.exists(test_dir / "figure1.png")
 
     # Check the content of the .tex file (basic checks)
     with open(tex_file, "r", encoding="utf-8") as f:
@@ -102,9 +103,9 @@ def test_convert_notebook_exclude_input_output(setup_test_environment):
     - Converts the notebook with exclude_input=True and exclude_output=True.
     - Checks if the output .tex file excludes input and output cells.
     """
-    test_dir, notebook_file, output_dir, figure_file = setup_test_environment
+    _, notebook_file, figure_file = setup_test_environment
     converter = NotebookConverter(exclude_input=True, exclude_output=True)
-    tex_file = converter.convert_notebook(str(notebook_file), str(output_dir), [])
+    tex_file = converter.convert_notebook(str(notebook_file), [figure_file])
 
     # Check if the .tex file is created
     assert os.path.exists(tex_file)
@@ -123,17 +124,17 @@ def test_ensure_figures_available(tmp_path):
     - Checks if the figure is copied successfully.
     """
     assignment_dir = tmp_path / "assignment"
-    output_dir = tmp_path / "output"
     assignment_dir.mkdir()
-    output_dir.mkdir()
+    test_dir = tmp_path / "test_files"
+    test_dir.mkdir()
     figure_file = assignment_dir / "figure2.png"
 
     with open(figure_file, "wb") as f:
         f.write(b"Dummy figure content")  # Create a dummy figure
 
     converter = NotebookConverter()
-    converter._ensure_figures_available(str(assignment_dir), str(output_dir), ["figure2.png"])
-    assert os.path.exists(os.path.join(str(output_dir), "figure2.png"))
+    converter._ensure_figures_available(str(assignment_dir), str(test_dir), ["figure2.png"])
+    assert os.path.exists(test_dir / "figure2.png")
 
 def test_convert_notebook_long_output(setup_test_environment):
     """
@@ -142,7 +143,7 @@ def test_convert_notebook_long_output(setup_test_environment):
     - Converts the sample notebook to LaTeX.
     - Checks if the output .tex file are truncated.
     """
-    test_dir, notebook_file, output_dir, figure_file = setup_test_environment
+    _, notebook_file, _ = setup_test_environment
     nb = new_notebook()
    
     long_output_lines = ['Line {}\n'.format(i) for i in range(100)]
@@ -158,7 +159,7 @@ def test_convert_notebook_long_output(setup_test_environment):
         nbformat.write(nb, f)
 
     converter = NotebookConverter(max_output_lines=32)
-    tex_file = converter.convert_notebook(str(notebook_file), str(output_dir), [])
+    tex_file = converter.convert_notebook(str(notebook_file), [])
     assert os.path.exists(tex_file)
     # Check the content of the .tex file (basic checks)
     with open(tex_file, "r", encoding="utf-8") as f:

@@ -3,7 +3,6 @@
 
 % Basic packages
 \usepackage[a4paper,margin=1in]{geometry}
-\usepackage{hyperref}
 \usepackage{graphicx}
 \usepackage{amsmath}
 \usepackage{booktabs}
@@ -16,15 +15,12 @@
 \setCJKsansfont{Noto Sans CJK SC}
 \setCJKmonofont{Noto Sans Mono CJK SC}
 
-% Hyperref setup
+\usepackage[colorlinks=true,linkcolor=blue]{hyperref}
+% Document metadata
 \hypersetup{
-    colorlinks=true,
-    linkcolor=blue,
-    filecolor=magenta,
-    urlcolor=cyan,
-    pdftitle={\VAR{title}},
-    pdfauthor={\VAR{author}},
-    pdfdate={\VAR{date}}
+    pdftitle={Article Title},
+    pdfauthor={Author Names},
+    pdfsubject={Article Subject}
 }
 
 % Code listing setup

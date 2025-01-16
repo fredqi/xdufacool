@@ -10,6 +10,12 @@
 \setCJKmonofont{Noto Sans Mono CJK SC}
 
 \usepackage[colorlinks=true,linkcolor=blue]{hyperref}
+% Document metadata
+\hypersetup{
+    pdftitle={\VAR{course_id}-\VAR{assignment_id} Submissions},
+    pdfauthor={\VAR{course_id} Course},
+    pdfsubject={Assignment Submissions}
+}
 
 % Use titletoc to customize Table of Contents
 \usepackage{titletoc}
@@ -17,13 +23,6 @@
   {\vspace{10pt}\bfseries}
   {\makebox[0pt][r]{\thecontentslabel\enspace}}
   {}{\titlerule*[.75pc]{.}\contentspage}
-
-% Document metadata
-\hypersetup{
-    pdftitle={\VAR{course_id}-\VAR{assignment_id} Submissions},
-    pdfauthor={\VAR{course_id} Course},
-    pdfsubject={Assignment Submissions}
-}
 
 \title{\textbf{\VAR{course_id}-\VAR{assignment_id} Submissions}}
 \author{\textbf{Compiled on \VAR{date}}}
