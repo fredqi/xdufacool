@@ -23,24 +23,26 @@ import os
 import sys
 import glob
 import shutil
+from pathlib import Path
 from zipfile import ZipFile
 import subprocess as subproc
 
 import csv
 import nbformat
-from nbconvert import LatexExporter
 import subprocess
 import logging
 import zipfile
-from datetime import date
+import tempfile
+from datetime import date, datetime
 
 try:
     from xdufacool.converters import LaTeXConverter    
     from xdufacool.converters import NotebookConverter
+    from xdufacool.converters import PDFCompiler
 except ImportError:
     from .converters import LaTeXConverter
     from .converters import NotebookConverter
-
+    from .converters import PDFCompiler
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
@@ -75,10 +77,13 @@ def temporal_func():
             continue
         logging.info(fld)
         subfolders = os.listdir(fld)
-        for stu in subfolders:
-            if os.path.isdir(stu):
-                stu_id = stu
-                logging.info(stu_id)
+        for sfld in subfolders:
+            if sfld.startswith('20'):
+                logging.info('  ' + sfld)
+                files = os.listdir(os.path.join(fld, sfld))
+                for afile in files:
+                    if afile.endswith('.pdf'):
+                        logging.info('    ' + afile)
 
 def move_file():
     """Move files out of sub-directories in the current working directory."""
@@ -686,6 +691,85 @@ def collect_reports(formalized_dir):
                     logging.error(f"Error decompressing zip file {zip_filepath}: {e}")
     return report_files
 
+def process_zip_submission(zip_filepath):
+    """
+    Processes a zip submission, extracting contents to a temporary directory.
+    Handles PDF and IPYNB files based on assignment type inferred from the file name.
+
+    Args:
+        zip_filepath (str): Path to the zip file.
+
+    Returns:
+        str: Path to the processed PDF file, or None if no suitable file was found.
+    """
+    # Extract information from the file name
+    filename = os.path.basename(zip_filepath)
+    match = re.match(r"(?P<course_key>[A-Z]{4})-(?P<assignment_id>HW\d+[A-Z]\d+)-(?P<student_id>[0-9]{11}X?)-(?P<student_name>.+)\.zip", filename, re.IGNORECASE)
+    
+    if not match:
+        logging.error(f"Filename format is incorrect: {filename}")
+        return None
+
+    course_key = match.group('course_key')
+    assignment_id = match.group('assignment_id')
+    student_id = match.group('student_id')
+    student_name = match.group('student_name')
+    assignment_type = "coding"
+    try:
+        # Create a temporary directory with a UUID as part of its name
+        with tempfile.TemporaryDirectory(prefix=f"{course_key}-") as temp_dir:
+            temp_dir = Path(temp_dir)
+            logging.info(f"Created temporary directory: {temp_dir}")
+
+            with ZipFile(zip_filepath, 'r') as zip_ref:
+                zip_ref.extractall(temp_dir)
+
+            pdf_files = glob.glob(os.path.join(temp_dir, "**/*.pdf"), recursive=True)
+            ipynb_files = glob.glob(os.path.join(temp_dir, "**/*.ipynb"), recursive=True)
+
+            if assignment_type == "report" and pdf_files:
+                # Report assignment, prioritize PDF
+                pdf_file = pdf_files[0]  # Assume first PDF is the relevant one
+                logging.info(f"Found PDF file for report assignment: {pdf_file}")
+                return pdf_file
+            elif assignment_type == "coding" and ipynb_files:
+                # Coding assignment, process IPYNB
+                ipynb_file = ipynb_files[0]  # Assume first IPYNB is the relevant one
+                logging.info(f"Found IPYNB file for coding assignment: {ipynb_file}")
+                # Initialize NotebookConverter
+                converter = NotebookConverter()
+                metadata = {
+                    'title': assignment_id,
+                    'authors': [{"name": f"{student_name} (ID: {student_id})"}],
+                    'date': datetime.now().strftime("%Y-%m-%d %H:%M")
+                }
+                tex_file = converter.convert_notebook(ipynb_file, [], metadata)
+                if tex_file is None:
+                    return None
+                # Compile to PDF using PDFCompiler
+                pdf_compiler = PDFCompiler()
+                pdf_file = pdf_compiler.compile(tex_file, str(temp_dir))
+                if pdf_file:
+                    src_path = Path(zip_filepath).parent
+                    dest_file = f"{course_key}-{assignment_id}-{student_id}-{student_name}.pdf"
+                    shutil.move(pdf_file, src_path / dest_file)
+                    return src_path / dest_file
+                else:
+                    logging.error(f"Failed to compile PDF for {ipynb_file}")
+
+            else:
+                logging.warning(f"No suitable PDF or IPYNB file found in {zip_filepath}")
+                return None
+
+    except Exception as e:
+        logging.error(f"Error processing {zip_filepath}: {str(e)}")
+        return None
+    finally:
+        # Clean up the temporary directory
+        if temp_dir.exists():
+            shutil.rmtree(temp_dir)
+            logging.info(f"Removed temporary directory: {temp_dir}")
+
 class HomeworkManager:
     """
     Manages student homework submissions.
@@ -1044,7 +1128,7 @@ class HomeworkManager:
         """
         # This is a placeholder implementation. You might want to implement
         # a more robust check based on your specific requirements.
-        return file_ext in [".zip", ".pdf"]
+        return file_ext in [".zip", ".pdf", ".ipynb"]
 
     def merge_assignment_pdfs(self):
         """
@@ -1091,12 +1175,17 @@ class HomeworkManager:
             except Exception as e:
                 logging.error(f"Error processing {assignment_id}: {e}")
 
-
 if __name__ == "__main__":
-    manager = HomeworkManager(base_dir="/home/fred/lectures/PRML/eval/2024-Autumn",
-                              course_id="PRML",
-                              assignment_ids=["HW24A01", "HW24A05"])
-    manager.collect_submissions()
-    manager.extract_and_process_submissions()
-    # manager.organize_submissions()
-    manager.merge_assignment_pdfs()  # New step to merge PDFs
+    # manager = HomeworkManager(base_dir="/home/fred/lectures/PRML/eval/2024-Autumn",
+    #                           course_id="PRML",
+    #                           assignment_ids=["HW24A02"])
+    # manager.collect_submissions()
+    # print(manager.assignments.keys())
+    # manager.extract_and_process_submissions()
+    # print(manager.assignments['HW24A02'].keys())
+    # # manager.organize_submissions()
+    # manager.merge_assignment_pdfs()  # New step to merge PDFs
+    # zipfile = "/home/fred/lectures/PRML/eval/2024-Autumn/PRML-HW24A02/22009200033/PRML-HW24A02-22009200033-任泽申.zip"
+    # pdffile = process_zip_submission(zipfile)
+    # print(pdffile)
+    pass

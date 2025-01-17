@@ -4,27 +4,102 @@ import logging
 import jinja2
 import shutil
 import nbformat
-import nbconvert
 from nbconvert import LatexExporter
-from nbconvert.preprocessors import TagRemovePreprocessor
 from traitlets.config import Config
 from pathlib import Path
 
 
+class PDFCompiler:
+    """
+    Handles PDF compilation process using XeLaTeX with detailed error handling and configuration.
+    """
+    
+    def __init__(self, compiler='xelatex', max_runs=2):
+        """
+        Initialize PDF compiler.
+
+        Args:
+            compiler (str): LaTeX compiler to use ('xelatex', 'pdflatex', etc.)
+            max_runs (int): Maximum number of compilation runs for TOC/references
+        """
+        self.compiler = compiler
+        self.max_runs = max_runs
+
+    def compile(self, tex_file, output_dir, clean_up=True):
+        """
+        Compile LaTeX file to PDF.
+
+        Args:
+            tex_file (str): Path to .tex file
+            output_dir (str): Directory for output files
+            clean_up (bool): Whether to remove auxiliary files after compilation
+
+        Returns:
+            str: Path to generated PDF file or None if compilation failed
+        """
+        original_cwd = os.getcwd()
+        try:
+            os.makedirs(output_dir, exist_ok=True)
+            os.chdir(output_dir)
+            
+            basename = Path(tex_file).stem
+            success = True
+
+            # Compile multiple times for TOC/references
+            for i in range(self.max_runs):
+                result = subprocess.run(
+                    [self.compiler, '-interaction=nonstopmode', '-halt-on-error', tex_file],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True
+                )
+                
+                if result.returncode != 0:
+                    success = False
+                    logging.error(f"LaTeX compilation failed ({basename}, attempt {i+1})")
+                    # logging.error(f"Command output:\n{result.stdout}")
+                    logging.error(f"Command error:\n{result.stderr}")
+                    clean_up = False
+                    break
+
+            pdf_path = os.path.join(output_dir, f"{basename}.pdf")
+            
+            if success and os.path.exists(pdf_path):
+                if clean_up:
+                    self._clean_auxiliary_files(output_dir, basename)
+                return pdf_path
+            return None
+
+        except Exception as e:
+            logging.error(f"Error in PDF compilation: {e}")
+            return None
+            
+        finally:
+            os.chdir(original_cwd)
+
+    def _clean_auxiliary_files(self, directory, basename):
+        """
+        Remove LaTeX auxiliary files.
+
+        Args:
+            directory (str): Directory containing the files
+            basename (str): Base name of the files (without extension)
+        """
+        aux_extensions = ['.aux', '.log', '.toc', '.out', '.nav', '.snm', '.vrb']
+        for ext in aux_extensions:
+            aux_file = os.path.join(directory, basename + ext)
+            try:
+                if os.path.exists(aux_file):
+                    os.remove(aux_file)
+            except OSError as e:
+                logging.error(f"Error removing auxiliary file {aux_file}: {e}")
+
 class LaTeXConverter:
     """
-    Manages LaTeX templates and PDF compilation processes.
-    Handles template loading, rendering, and PDF generation with proper CJK support.
+    Manages LaTeX templates and rendering processes.
     """
 
     def __init__(self, template_dir=None):
-        """
-        Initialize LaTeX template manager.
-
-        Args:
-            template_dir (str, optional): Custom template directory path.
-                                        Defaults to package's templates directory.
-        """
         if template_dir is None:
             template_dir = os.path.join(os.path.dirname(__file__), 'templates')
             
@@ -42,6 +117,7 @@ class LaTeXConverter:
             trim_blocks=True,
             autoescape=False,
         )
+        self.compiler = PDFCompiler()
 
     def render_template(self, template_name, **context):
         """
@@ -59,7 +135,7 @@ class LaTeXConverter:
 
     def compile_pdf(self, tex_content, output_dir, output_name, clean_up=True):
         """
-        Compile LaTeX content to PDF using xelatex.
+        Render and compile LaTeX content to PDF.
 
         Args:
             tex_content (str): LaTeX content to compile
@@ -70,66 +146,14 @@ class LaTeXConverter:
         Returns:
             str: Path to generated PDF file or None if compilation failed
         """
-        original_cwd = os.getcwd()
-        try:
-            os.makedirs(output_dir, exist_ok=True)
-            os.chdir(output_dir)
-            # Write LaTeX content to file
-            tex_file = f"{output_name}.tex"
-            with open(tex_file, 'w', encoding='utf-8') as f:
-                f.write(tex_content)
+        os.makedirs(output_dir, exist_ok=True)
+        tex_file = os.path.join(output_dir, f"{output_name}.tex")
+        
+        # Write LaTeX content to file
+        with open(tex_file, 'w', encoding='utf-8') as f:
+            f.write(tex_content)
 
-            # Compile twice for TOC
-            for i in range(2):
-                result = subprocess.run(
-                    ['xelatex', '-interaction=nonstopmode', '-halt-on-error', tex_file],
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.PIPE,
-                    text=True
-                )
-                
-                if result.returncode != 0:
-                    # Log only on error
-                    logging.error(f"LaTeX compilation failed ({output_name} attempt {i+1}) with return code: {result.returncode}")
-                    logging.error(f"{result.stderr.strip()}")
-                    
-                    # Keep log file for debugging if compilation fails
-                    clean_up = False
-                    continue
-
-            pdf_path = os.path.join(output_dir, f"{output_name}.pdf")
-            
-            if os.path.exists(pdf_path):
-                if clean_up:
-                    self._clean_auxiliary_files(output_dir, output_name)
-                return pdf_path
-            else:
-                logging.error(f"PDF file not generated at {pdf_path}")
-                return None
-
-        except Exception as e:
-            logging.error(f"Error in PDF compilation: {e}")
-            return None
-            
-        finally:
-            os.chdir(original_cwd)
-
-    def _clean_auxiliary_files(self, directory, basename):
-        """
-        Remove LaTeX auxiliary files.
-
-        Args:
-            directory (str): Directory containing the files
-            basename (str): Base name of the files (without extension)
-        """
-        aux_extensions = ['.aux', '.log', '.toc', '.out', '.nav', '.snm']
-        for ext in aux_extensions:
-            aux_file = os.path.join(directory, basename + ext)
-            try:
-                if os.path.exists(aux_file):
-                    os.remove(aux_file)
-            except OSError as e:
-                logging.error(f"Error removing auxiliary file {aux_file}: {e}")
+        return self.compiler.compile(tex_file, output_dir, clean_up)
 
 class NotebookConverter:
     """
@@ -154,7 +178,7 @@ class NotebookConverter:
         self.exporter = LatexExporter(config=config)
         self.max_output_lines = max_output_lines
 
-    def convert_notebook(self, ipynb_file, figures):
+    def convert_notebook(self, ipynb_file, figures=[], metadata={}):
         """
         Convert a Jupyter notebook to a LaTeX file, ensuring figures are available.
 
@@ -172,9 +196,10 @@ class NotebookConverter:
         try:
             with open(ipynb_file, 'r') as f:
                 notebook_content = nbformat.read(f, as_version=4)
+                if hasattr(notebook_content, 'metadata'):
+                    notebook_content.metadata.update(metadata)
                 self._truncate_long_outputs(notebook_content)
                 body, resources = self.exporter.from_notebook_node(notebook_content)
-
             figures_dir = output_dir / 'figures'
             figures_dir.mkdir(exist_ok=True)
             self._ensure_figures_available(ipynb_file.parent, output_dir, figures)
@@ -214,32 +239,44 @@ class NotebookConverter:
         Args:
             nb (nbformat.NotebookNode): The notebook object.
         """
+        def truncate_text(text):
+            """Helper function to truncate text content."""
+            lines = text.splitlines()
+            if len(lines) > self.max_output_lines:
+                half_lines = self.max_output_lines // 2
+                return '\n'.join(
+                    lines[:half_lines] +
+                    ['... (output truncated) ...'] +
+                    lines[-half_lines:]
+                )
+            return text
+
         for cell in nb.cells:
             if cell.cell_type == 'code' and 'outputs' in cell:
                 for output in cell.outputs:
-                    if output.output_type == 'stream':
-                        if 'text' in output:
-                            lines = output.text.splitlines()
-                            if len(lines) > self.max_output_lines:
-                                half_lines = self.max_output_lines // 2
-                                output.text = '\n'.join(
-                                    lines[:half_lines] +
-                                    ['... (output truncated) ...'] +
-                                    lines[-half_lines:]
-                                )
+                    if output.output_type == 'stream' and 'text' in output:
+                        output.text = truncate_text(output.text)
                     elif output.output_type in ('execute_result', 'display_data'):
                         if 'text/plain' in output.data:
-                            lines = output.data['text/plain'].splitlines()
-                            if len(lines) > self.max_output_lines:
-                                half_lines = self.max_output_lines // 2
-                                output.data['text/plain'] = '\n'.join(
-                                    lines[:half_lines] +
-                                    ['... (output truncated) ...'] +
-                                    lines[-half_lines:]
-                                )
+                            output.data['text/plain'] = truncate_text(output.data['text/plain'])
                     elif output.output_type == 'error':
-                        # You might want to handle errors differently
                         pass
+
+def docx_to_pdf(docx_filepath, pdf_filepath):
+    """Converts a DOCX file to PDF."""
+    pass
+
+def doc_to_pdf(doc_filepath, pdf_filepath):
+    """Converts a DOC file to PDF."""
+    pass
+
+def rar_to_zip(rar_filepath, zip_filepath):
+    """Converts a RAR file to ZIP."""
+    pass
+
+def sevenzip_to_zip(sevenzip_filepath, zip_filepath):
+    """Converts a 7z file to ZIP."""
+    pass
 
 # if __name__ == "__main__":
 #     # notebook_file = "/home/fred/lectures/PRML/eval/2024-Autumn/PRML-HW24A02/22012100021/logistic-regression.ipynb"
