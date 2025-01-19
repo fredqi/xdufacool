@@ -27,7 +27,7 @@ class Teacher:
         return f"{type(self).__name__}({vars(self)}) at {hex(id(self))}"
 
     def __str__(self):
-        return f"{self.name} ({self.teacher_id})"
+        return f"{self.name}"
 
 class Student:
     def __init__(self, student_id, name, email=None, major=None):
@@ -43,19 +43,20 @@ class Student:
         return f"{self.name} (ID: {self.student_id})"
 
 class Course:
-    def __init__(self, course_id, abbreviation, topic, semester, teachers, teaching_plan, course_year, start_date):
+    def __init__(self, course_id, abbreviation, topic, semester, teachers, teaching_plan, course_year, start_date, notification_template):
         self.course_id = course_id
         self.abbreviation = abbreviation
         self.topic = topic
         self.semester = semester
         self.teachers = teachers
         self.teaching_plan = teaching_plan
-        self.assignments = []
+        self.assignments = {}
         self.course_year = course_year
         self.start_date = start_date
+        self.notification_template = notification_template
 
     def add_assignment(self, assignment):
-        self.assignments.append(assignment)
+        self.assignments[assignment.assignment_id] = assignment
 
     def __repr__(self):
         return f"{type(self).__name__}({vars(self)}) at {hex(id(self))}"
@@ -87,21 +88,14 @@ class Course:
             'start_date': datetime.strptime(start_date, '%Y-%m-%d')
         }
 
-        # Handle teachers (assuming a list of teacher IDs in the config)
-        teachers = []
-        for teacher_id in course_config.get('teachers', []):
-            # Assuming you have a way to retrieve Teacher objects by ID
-            teacher = get_teacher_by_id(teacher_id)
-            if teacher:
-                teachers.append(teacher)
-        course_data['teachers'] = teachers
+        course_data['teachers'] = []
+        for item in course_config.get('teachers', []):
+            teacher = Teacher(**item)
+            course_data['teachers'].append(teacher)
 
-        # Handle teaching plan (assuming a dictionary in the config)
         course_data['teaching_plan'] = course_config.get('teaching_plan', {})
-
-        # Create the Course object using dictionary unpacking
+        course_data['notification_template'] = course_config.get('notification_template', 'notification.md.j2')
         course = Course(**course_data)
-
         # Handle assignments
         for assignment_config in config['assignments']:
             assignment_type = assignment_config['type']
@@ -143,6 +137,7 @@ class Assignment:
         self.due_date = due_date
         self.max_score = max_score
         self.submissions = {}
+        self.assignment_folder = None
         self.accepted_extensions = {
             'compressed': ['.zip'],
             'document': ['.pdf']
@@ -169,43 +164,42 @@ class Assignment:
     def get_submission(self, student_id):
         return self.submissions.get(student_id)
 
-    def generate_notification(self, course_context):
+    def generate_notification(self, output_dir):
         """Generates a notification for the assignment using Jinja2 directly.
 
         Args:
-            course_context (dict): A dictionary containing course-level information.
+            output_dir (str): The directory to store the notification.
         """
-        notification_template = course_context["notification_template"]
-
-        env = Environment(loader=FileSystemLoader('.'))
-        template = env.get_template(notification_template)
-        required_keys = meta.find_undeclared_variables(env.parse(template.render()))
-        remaining_keys = required_keys - set(course_context.keys()) - {'homework_id'}
-
-        # Get assignment-specific context
-        assignment_context = {
-            'homework_desc': self.description,
-            'deadline': self.due_date.strftime('%Y-%m-%d'),
-            'teacher': self.course.teachers[0].name,  # Assuming one teacher for simplicity
-            'course_abbrev': self.course.abbreviation,
-            'serial_number': self.assignment_id.split('-')[-1],  # Extract serial number from assignment_id
-            'course_year': self.course.course_year
+        context = {
+            'task_id': self.common_name(),
+            'task_topic': self.title,
+            'task_description': self.description,
+            'due_date': self.due_date.strftime('%Y-%m-%d'),
+            'teachers': " and ".join([str(teacher) for teacher in self.course.teachers]),
         }
-        full_context = {'homework_id': self.assignment_id, **course_context, **assignment_context}
-        markdown_content = template.render(full_context)
+        logging.debug(f"Course context: {self.course} {self.assignment_folder.parent}")
+        notification_template = self.course.notification_template
+        env = Environment(loader=FileSystemLoader(self.assignment_folder.parent))
+        # template_file = self.assignment_folder.parent / notification_template
+        # with open(template_file, 'r') as f:
+        #     template_source = f.read()
+        #     template = env.parse(template_source)
+        #     required_keys = meta.find_undeclared_variables(template)
+        #     remaining_keys = required_keys - context.keys()
+        #     logging.debug(f"Remaining keys: {remaining_keys}")
+        template = env.get_template(notification_template)
+        markdown_content = template.render(context)
+        self.save_notification(markdown_content, output_dir)
 
-        # Save the Markdown notification directly
-        self.save_notification(markdown_content)
-
-    def save_notification(self, markdown_content):
+    def save_notification(self, markdown_content, output_dir):
         """Saves the Markdown notification to a file."""
         try:
-            output_md_path = f'notification-{self.common_name()}.md'
+            output_md_path = output_dir / f'notification-{self.common_name()}.md'
             with open(output_md_path, 'w') as f:
                 f.write(markdown_content)
-            print(f'Generated notification to: {output_md_path}')
+            logging.info(f'Generated notification to {output_md_path}')
         except Exception as e:
-            print(f'Error during saving Markdown: {e}')
+            logging.error(f'Error during saving Markdown: {e}')
 
     def collect_submissions(self, base_dir):
         """
@@ -329,72 +323,56 @@ class CodingAssignment(Assignment):
         self.notebook = notebook or {}
         self.data = data or []
         self.figures = figures or []
-        self.assignment_folder = assignment_folder
+        self.assignment_folder = Path(assignment_folder)
 
     def __repr__(self):
         return f"{type(self).__name__}({vars(self)}) at {hex(id(self))}"
 
     def prepare(self, output_dir):
-        """Prepares the coding assignment by rendering the environment file, converting the Python script to a notebook, and copying necessary files."""
-        # Use assignment_id for directory and tarball name
-        assignment_id = self.assignment_id
-        output_dir = Path(output_dir)
+        """Prepares the coding assignment for distribution."""
+        logging.info(f"Preparing assignment {self.assignment_id}...")
 
-        # 1. Render environment file
-        self.render_environment_file(assignment_id, output_dir)
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_dir = Path(temp_dir)
+            logging.debug(f"Created temporary directory: {temp_dir}")
+            self.render_environment_file(temp_dir)
+            self.convert_py_to_ipynb(temp_dir)
+            self.copy_assignment_files(temp_dir)
+            tarball_path = self.package_assignment(output_dir, temp_dir)
+            logging.info(f"Assignment {self} prepared successfully: {tarball_path}")
+            return tarball_path
 
-        # 2. Convert Python script to notebook
-        self.convert_py_to_ipynb(assignment_id, output_dir)
-
-        # 3. Copy assignment files
-        self.copy_assignment_files(assignment_id, output_dir)
-
-        # 4. Generate tarball
-        self.generate_exercise_tarball(assignment_id, output_dir)
-
-    def render_environment_file(self, assignment_id, output_dir):
+    def render_environment_file(self, output_dir):
         """Renders the environment file using Jinja2."""
-        template = Path(self.environment_template)
+        logging.debug(f"{self.assignment_folder}")
+        template = self.assignment_folder / self.environment_template
         env = Environment(loader=FileSystemLoader(template.parent))
         template = env.get_template(template.name)
-
-        rendered_content = template.render({
-            'course_abbrev': self.course.abbreviation,
-            'year': self.course.course_year,
-            'assignment_id': assignment_id  # Use assignment_id
-        })
-
-        output_file = output_dir / assignment_id / "environment.yml"
-        output_file.parent.mkdir(parents=True, exist_ok=True)
+        context = {'course_abbrev': self.course.abbreviation, 'serial_number': self.assignment_id}
+        rendered_content = template.render(context)
+        output_file = output_dir / "environment.yml"
         with open(output_file, 'w') as f:
             f.write(rendered_content)
-        print(f"Rendered environment file to {output_file}")
+        logging.info(f"Rendered environment file to {output_file}")
 
-    def convert_py_to_ipynb(self, assignment_id, output_dir):
+    def convert_py_to_ipynb(self, output_dir):
         """Convert Python scripts to Jupyter notebooks with additional processing."""
-        for item in self.notebook:
-            source = self.assignment_folder / item['source']
-            dest = output_dir / assignment_id / item['output']
-            dest.parent.mkdir(parents=True, exist_ok=True)
-            # Read and convert to notebook
-            notebook = jupytext.read(source)
-            # Add additional cells if specified
-            additional_cells = []
-            for cell in item['additional_cells']:
-                if cell['cell_type'] == 'markdown':
-                    additional_cells.append(new_markdown_cell(cell['content']))
-                elif cell['cell_type'] == 'code':
-                    additional_cells.append(new_code_cell(cell['content']))
-            # Add additional cell at the beginning of the notebook
-            notebook.cells = additional_cells + notebook.cells
-            # Disable syncing
-            notebook.metadata['jupytext'] = {'formats': 'ipynb'}
+        source = self.assignment_folder / self.notebook['source']
+        dest = output_dir / self.notebook['output']
+        notebook = jupytext.read(source)
+        extra_cells = []
+        for cell in self.notebook['extra_cells']:
+            if cell['type'] == 'markdown':
+                extra_cells.append(new_markdown_cell(cell['content']))
+            elif cell['type'] == 'code':
+                extra_cells.append(new_code_cell(cell['content']))
+        notebook.cells = extra_cells + notebook.cells
+        notebook.metadata['jupytext'] = {'formats': 'ipynb'}
+        jupytext.write(notebook, dest)
+        logging.info(f"Converted {source} to {dest}")
             
-            # Write notebook to destination
-            jupytext.write(notebook, dest)
-            print(f"Converted {source} to {dest}")
 
-    def copy_assignment_files(self, assignment_id, output_dir):
+    def copy_assignment_files(self, output_dir):
         """
         Copy assignment files for a specific assignment.
 
@@ -410,74 +388,27 @@ class CodingAssignment(Assignment):
         if not self.assignment_folder:
             raise KeyError("Missing 'assignment_folder' in assignment configuration.")
 
-        # Ensure the destination directory exists
-        destination_dir = output_dir / assignment_id
-        destination_dir.mkdir(parents=True, exist_ok=True)
+        destination_dir = Path(output_dir)
 
-        for item in self.data:
+        for item in self.data + self.figures:
             src = self.assignment_folder / item
             dest = destination_dir / item
-
-            # Check if the source file exists
             if not src.exists():
-                print(f"Source file does not exist: {src}")
+                logging.warning(f"Source file does not exist: {src}")
                 continue
-
-            # Copy the file
             try:
                 shutil.copy2(src, dest)
-                print(f"Copied {src} to {dest}")
+                logging.info(f"Copied {src} to {dest}")
             except OSError as e:
-                print(f"Failed to copy {src} to {dest}: {e}")
+                logging.error(f"Failed to copy {src} to {dest}: {e}")
 
-        for item in self.figures:
-            src = self.assignment_folder / item
-            dest = destination_dir / item
-
-            # Check if the source file exists
-            if not src.exists():
-                print(f"Source file does not exist: {src}")
-                continue
-
-            # Copy the file
-            try:
-                shutil.copy2(src, dest)
-                print(f"Copied {src} to {dest}")
-            except OSError as e:
-                print(f"Failed to copy {src} to {dest}: {e}")
-
-    def generate_exercise_tarball(self, assignment_id, output_dir):
-        """
-        Generate a tarball for a programming exercise.
-
-        Args:
-            assignment_id (str): A unique identifier for the exercise (used as the directory name and tarball name).
-            output_dir (str): The base output directory.
-
-        Returns:
-            str: Path to the generated tarball.
-
-        Raises:
-            FileNotFoundError: If the directory named by assignment_id does not exist.
-            OSError: If there is an error during the tarball creation.
-        """
-        # Base directory is assumed to be named as assignment_id
-        base_directory = output_dir / assignment_id
-        if not base_directory.exists():
-            raise FileNotFoundError(f"Directory does not exist: {base_directory}")
-        if not base_directory.is_dir():
-            raise ValueError(f"Path is not a valid directory: {base_directory}")
-
-        # Tarball name and path in the current working directory
-        tarball_name = f"{assignment_id}.tar.gz"
-        tarball_path = Path.cwd() / tarball_name
-        try:
-            with tarfile.open(tarball_path, "w:gz") as tar:
-                tar.add(base_directory, arcname=assignment_id)
-            print(f"Tarball created at: {tarball_path}")
-        except OSError as e:
-            raise OSError(f"Failed to create tarball: {e}")
-
+    def package_assignment(self, output_dir, temp_dir):
+        """Packages the assignment into a tarball for distribution."""
+        tarball_name = f"{self.common_name()}-dist.tar.gz"
+        tarball_path = Path(output_dir) / tarball_name
+        with tarfile.open(tarball_path, "w:gz") as tar:
+            for item in temp_dir.iterdir():
+                tar.add(item, arcname=f"{self.common_name()}/{item.name}")
         return tarball_path
 
     @staticmethod
@@ -672,12 +603,35 @@ def collect_submissions(args):
     course = Course.from_config(config_file)
     logging.info(f"Course created: {course}")
     submission_dir = Path(args.submission_dir)
-    for assignment in course.assignments:
+    for assignment in course.assignments.values():
         logging.info(f"Collecting submissions for {assignment}")
         assignment.collect_submissions(submission_dir)
         logging.info("Collection process finished.")
         assignment.merge_submissions(submission_dir)
         logging.info("Merging process finished.")
+
+def create_assignment(args):
+    """Handles the 'create' subcommand to create an assignment package."""
+    config_file = args.config
+    assignment_id = args.assignment_id
+    output_dir = Path(args.output_dir)
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    course = Course.from_config(config_file)
+    assignment = course.assignments.get(assignment_id)
+
+    if assignment is None:
+        logging.error(f"Assignment with ID {assignment_id} not found.")
+        return
+
+    logging.info(f"Creating package for {assignment} ...")
+    tarball_path = assignment.prepare(output_dir)
+    if tarball_path is None:
+        logging.error(f"Failed to create distribution tarball for {assignment}.")
+        return
+    assignment.generate_notification(output_dir)    
+    
 
 def main():
     """Parses command-line arguments and dispatches to appropriate subcommands."""
@@ -689,10 +643,16 @@ def main():
     collect_parser.add_argument("submission_dir", help="Submission directory")
     collect_parser.set_defaults(func=collect_submissions)
 
+    # Create sub-command
+    create_parser = subparsers.add_parser("create", parents=[parent_parser], help="Create assignment for distribution")
+    create_parser.add_argument("assignment_id", help="ID of the assignment to create")
+    create_parser.add_argument("output_dir", help="Directory to store the distribution package")
+    create_parser.set_defaults(func=create_assignment)
+
     args = parser.parse_args()
     args.func(args)
 
 if __name__ == "__main__":
-    setup_logging('xdufacool.log')
+    setup_logging('xdufacool.log', logging.DEBUG)
     logging.info("Starting xdufacool ...")
     main()
