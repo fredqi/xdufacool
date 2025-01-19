@@ -178,7 +178,7 @@ class NotebookConverter:
         self.exporter = LatexExporter(config=config)
         self.max_output_lines = max_output_lines
 
-    def convert_notebook(self, ipynb_file, figures=[], metadata={}):
+    def convert_notebook(self, ipynb_file, assignment_folder=None, figures=[], metadata={}):
         """
         Convert a Jupyter notebook to a LaTeX file, ensuring figures are available.
 
@@ -190,8 +190,7 @@ class NotebookConverter:
         - Path to the generated LaTeX file.
         """
         ipynb_file = Path(ipynb_file)
-        base_name = ipynb_file.stem
-        output_dir = ipynb_file.parent
+        output_dir = ipynb_file.parent        
 
         try:
             with open(ipynb_file, 'r') as f:
@@ -200,17 +199,18 @@ class NotebookConverter:
                     notebook_content.metadata.update(metadata)
                 self._truncate_long_outputs(notebook_content)
                 body, resources = self.exporter.from_notebook_node(notebook_content)
-            figures_dir = output_dir / 'figures'
-            figures_dir.mkdir(exist_ok=True)
-            self._ensure_figures_available(ipynb_file.parent, output_dir, figures)
+            if assignment_folder and figures:
+                self._copy_missing_figures(assignment_folder, output_dir, figures)
 
             if 'outputs' in resources:
+                figures_dir = output_dir / 'figures'
+                figures_dir.mkdir(exist_ok=True)
                 for filename, data in resources['outputs'].items():
                     with open(figures_dir / filename, 'wb') as f:
                         f.write(data)
                     body = body.replace(filename, f'figures/{filename}')
 
-            latex_file = output_dir / f"{base_name}.tex"
+            latex_file = output_dir / f"{ipynb_file.stem}.tex"
             with open(latex_file, 'w') as f:
                 f.write(body)
 
@@ -220,16 +220,17 @@ class NotebookConverter:
             print(f"An error occurred: {e}")
             return None
 
-    def _ensure_figures_available(self, assignment_dir, output_dir, figures):
+    def _copy_missing_figures(self, assignment_dir, output_dir, figures):
         """Ensure that all required figures are present in the output directory."""
         for fig in figures:
-            source_path = os.path.join(assignment_dir, fig)
-            target_path = os.path.join(output_dir, fig)
-            if not os.path.exists(target_path):
-                if os.path.exists(source_path):
+            source_path = Path(assignment_dir) / fig
+            target_path = Path(output_dir) / fig
+            if not target_path.exists():
+                logging.info(f"Copying {fig} from {assignment_dir} to {output_dir}")
+                if source_path.exists():
                     shutil.copy2(source_path, target_path)
                 else:
-                    logging.warning(f"Figure '{fig}' not found in assignment directory.")
+                    logging.warning(f"Figure '{fig}' not found in {assignment_dir}.")
 
     def _truncate_long_outputs(self, nb):
         """
@@ -277,9 +278,3 @@ def rar_to_zip(rar_filepath, zip_filepath):
 def sevenzip_to_zip(sevenzip_filepath, zip_filepath):
     """Converts a 7z file to ZIP."""
     pass
-
-# if __name__ == "__main__":
-#     # notebook_file = "/home/fred/lectures/PRML/eval/2024-Autumn/PRML-HW24A02/22012100021/logistic-regression.ipynb"
-#     notebook_file = "/home/fred/lectures/PRML/eval/2024-Autumn/PRML-HW24A02/22009200070/linear-regression.ipynb"
-#     converter = NotebookConverter(exclude_input=False, exclude_output=False)
-#     converter.convert_notebook(notebook_file, [])

@@ -57,7 +57,7 @@ def setup_package():
                     ],
                     # scripts
                     entry_points={'console_scripts':
-                                      ['xdufacool = xdufacool.homework_manager:check_homeworks',
+                                      ['xdufacool = xdufacool.models:main',
                                        'pdf2pptx  = xdufacool.pdf2pptx:pdf2pptx',
                                        'syllabus  = xdufacool.syllabus:syllabus_helper',
                                        'xduscore  = xdufacool.score_helper:xduscore',

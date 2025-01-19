@@ -43,26 +43,26 @@ except ImportError:
     from .converters import LaTeXConverter
     from .converters import NotebookConverter
     from .converters import PDFCompiler
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s",
-    handlers=[
-        logging.FileHandler("collect_local.log"),  # Log to a file
-        logging.StreamHandler(sys.stdout)  # Also log to the console
-    ]
-)
+# # Configure logging
+# logging.basicConfig(
+#     level=logging.INFO,
+#     format="%(asctime)s - %(levelname)s - %(message)s",
+#     handlers=[
+#         logging.FileHandler("collect_local.log"),  # Log to a file
+#         logging.StreamHandler(sys.stdout)  # Also log to the console
+#     ]
+# )
 
-# Get the StreamHandler for stdout
-stdout_handler = None
-for handler in logging.getLogger().handlers:
-    if isinstance(handler, logging.StreamHandler) and handler.stream == sys.stdout:
-        stdout_handler = handler
-        break
+# # Get the StreamHandler for stdout
+# stdout_handler = None
+# for handler in logging.getLogger().handlers:
+#     if isinstance(handler, logging.StreamHandler) and handler.stream == sys.stdout:
+#         stdout_handler = handler
+#         break
 
-# Set the level for stdout handler to WARNING
-if stdout_handler:
-    stdout_handler.setLevel(logging.WARNING)
+# # Set the level for stdout handler to WARNING
+# if stdout_handler:
+#     stdout_handler.setLevel(logging.WARNING)
 
 # Add the parent directory of xdufacool to sys.path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -748,7 +748,7 @@ def process_zip_submission(zip_filepath):
                     return None
                 # Compile to PDF using PDFCompiler
                 pdf_compiler = PDFCompiler()
-                pdf_file = pdf_compiler.compile(tex_file, str(temp_dir))
+                pdf_file = pdf_compiler.compile(tex_file, str(temp_dir), False)
                 if pdf_file:
                     src_path = Path(zip_filepath).parent
                     dest_file = f"{course_key}-{assignment_id}-{student_id}-{student_name}.pdf"
@@ -1161,8 +1161,10 @@ class HomeworkManager:
                     date=date.today().strftime("%Y-%m-%d"),
                     submissions=pdf_files  # Already sorted by student_id
                 )
+                with open(f"{output_name}.tex", "w") as f:
+                    f.write(latex_content)
                 pdf_path = self.latex_converter.compile_pdf(
-                    latex_content,
+                    f"{output_name}.tex",
                     self.base_dir,
                     output_name
                 )
@@ -1176,16 +1178,4 @@ class HomeworkManager:
                 logging.error(f"Error processing {assignment_id}: {e}")
 
 if __name__ == "__main__":
-    # manager = HomeworkManager(base_dir="/home/fred/lectures/PRML/eval/2024-Autumn",
-    #                           course_id="PRML",
-    #                           assignment_ids=["HW24A02"])
-    # manager.collect_submissions()
-    # print(manager.assignments.keys())
-    # manager.extract_and_process_submissions()
-    # print(manager.assignments['HW24A02'].keys())
-    # # manager.organize_submissions()
-    # manager.merge_assignment_pdfs()  # New step to merge PDFs
-    # zipfile = "/home/fred/lectures/PRML/eval/2024-Autumn/PRML-HW24A02/22009200033/PRML-HW24A02-22009200033-任泽申.zip"
-    # pdffile = process_zip_submission(zipfile)
-    # print(pdffile)
     pass
