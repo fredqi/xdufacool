@@ -1,0 +1,60 @@
+[build-system]
+requires = ["setuptools>=43.0.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "xdufacool"
+version = "0.9.0"
+description = "A set of toolkit for faculty members in the Xidian University."
+readme = "README.md"
+requires-python = ">=3.12"
+license = {file = "LICENSE"}
+keywords = ["xidian", "university", "faculty", "toolkit"]
+authors = [
+  {name = "Fei Qi", email = "fred.qi@ieee.org"},
+]
+maintainers = [
+  {name = "Fei Qi", email = "fred.qi@ieee.org"},
+]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Programming Language :: Python :: 3.12",
+]
+dependencies = [
+  "jinja2",
+  "nbformat",
+  "nbconvert",
+  "jupytext",
+  "requests",
+  "pyyaml",
+  "pypandoc",
+  "pysocks",
+  "tqdm",
+  "docx-mailmerge2",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest",
+  "pytest-cov",
+]
+
+[project.urls]
+homepage = "https://github.com/fredqi/xdufacool"
+
+[project.scripts]
+xdufacool = "xdufacool.models:main"
+pdf2pptx = "xdufacool.pdf2pptx:pdf2pptx"
+syllabus = "xdufacool.syllabus:syllabus_helper"
+xduscore = "xdufacool.score_helper:xduscore"
+arxort = "xdufacool.organize_bib:organize_bib"
+invoice_helper = "xdufacool.invoice:collect_invoice"
+
+[tool.setuptools]
+packages = ["xdufacool"]
+
+[tool.setuptools.package-data]
+xdufacool = ["templates/*.tex.j2"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"] 

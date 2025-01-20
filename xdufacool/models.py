@@ -1,12 +1,10 @@
 from datetime import datetime
-import os
-import glob
 import yaml
 import shutil
 import tarfile
 import jupytext
 from nbformat.v4 import new_markdown_cell, new_code_cell
-from jinja2 import Environment, FileSystemLoader, meta
+from jinja2 import Environment, FileSystemLoader
 from pathlib import Path
 import logging
 import argparse
@@ -15,6 +13,7 @@ from xdufacool.converters import NotebookConverter, PDFCompiler, LaTeXConverter
 from zipfile import ZipFile
 import tempfile
 from tqdm import tqdm
+import pypandoc
 
 class Teacher:
     def __init__(self, teacher_id, name, email=None, department=None):
@@ -189,17 +188,13 @@ class Assignment:
         #     logging.debug(f"Remaining keys: {remaining_keys}")
         template = env.get_template(notification_template)
         markdown_content = template.render(context)
-        self.save_notification(markdown_content, output_dir)
-
-    def save_notification(self, markdown_content, output_dir):
-        """Saves the Markdown notification to a file."""
         try:
-            output_md_path = output_dir / f'notification-{self.common_name()}.md'
-            with open(output_md_path, 'w') as f:
-                f.write(markdown_content)
-            logging.info(f'Generated notification to {output_md_path}')
+            output_html_path = output_dir / f'notification-{self.common_name()}.html'
+            pypandoc.convert_text(markdown_content, 'html', format='md', outputfile=str(output_html_path))
+            logging.info(f'Generated HTML notification: {output_html_path}')
+
         except Exception as e:
-            logging.error(f'Error during saving Markdown: {e}')
+            logging.error(f'Error during notification generation or conversion: {e}')
 
     def collect_submissions(self, base_dir):
         """
@@ -603,7 +598,12 @@ def collect_submissions(args):
     course = Course.from_config(config_file)
     logging.info(f"Course created: {course}")
     submission_dir = Path(args.submission_dir)
-    for assignment in course.assignments.values():
+    assignment_ids = args.assignment_ids if args.assignment_ids else course.assignments.keys()
+    for assignment_id in assignment_ids:
+        assignment = course.assignments.get(assignment_id)
+        if assignment is None:
+            logging.error(f"Assignment with ID {assignment_id} not found.")
+            continue
         logging.info(f"Collecting submissions for {assignment}")
         assignment.collect_submissions(submission_dir)
         logging.info("Collection process finished.")
@@ -613,25 +613,24 @@ def collect_submissions(args):
 def create_assignment(args):
     """Handles the 'create' subcommand to create an assignment package."""
     config_file = args.config
-    assignment_id = args.assignment_id
     output_dir = Path(args.output_dir)
-
     output_dir.mkdir(parents=True, exist_ok=True)
 
     course = Course.from_config(config_file)
-    assignment = course.assignments.get(assignment_id)
+    assignment_ids = args.assignment_ids if args.assignment_ids else course.assignments.keys()
+    for assignment_id in assignment_ids:
+        assignment = course.assignments.get(assignment_id)
 
-    if assignment is None:
-        logging.error(f"Assignment with ID {assignment_id} not found.")
-        return
+        if assignment is None:
+            logging.error(f"Assignment with ID {assignment_id} not found.")
+            continue
 
-    logging.info(f"Creating package for {assignment} ...")
-    tarball_path = assignment.prepare(output_dir)
-    if tarball_path is None:
-        logging.error(f"Failed to create distribution tarball for {assignment}.")
-        return
-    assignment.generate_notification(output_dir)    
-    
+        logging.info(f"Creating package for {assignment} ...")
+        tarball_path = assignment.prepare(output_dir)
+        if tarball_path is None:
+            logging.error(f"Failed to create distribution tarball for {assignment}.")
+            continue
+        assignment.generate_notification(output_dir)
 
 def main():
     """Parses command-line arguments and dispatches to appropriate subcommands."""
@@ -639,20 +638,26 @@ def main():
     parent_parser = argparse.ArgumentParser(add_help=False)
     parent_parser.add_argument("-c", "--config", default="config.yml", help="Config file path")
     subparsers = parser.add_subparsers(title="subcommands", dest="subcommand", required=True)
-    collect_parser = subparsers.add_parser("collect", parents=[parent_parser], help="Collect submissions")
-    collect_parser.add_argument("submission_dir", help="Submission directory")
-    collect_parser.set_defaults(func=collect_submissions)
 
-    # Create sub-command
-    create_parser = subparsers.add_parser("create", parents=[parent_parser], help="Create assignment for distribution")
-    create_parser.add_argument("assignment_id", help="ID of the assignment to create")
-    create_parser.add_argument("output_dir", help="Directory to store the distribution package")
+    create_parser = subparsers.add_parser("create", parents=[parent_parser],
+                                          help="Create assignment for distribution")
+    create_parser.add_argument("-o", "--output-dir", default="dist",
+                                help="Output directory")
+    create_parser.add_argument("assignment_ids", nargs="*",
+                                help="Assignment IDs to create (default: all)")
     create_parser.set_defaults(func=create_assignment)
+
+    collect_parser = subparsers.add_parser("collect", parents=[parent_parser],
+                                           help="Collect submissions")
+    collect_parser.add_argument("submission_dir", help="Submission directory")
+    collect_parser.add_argument("assignment_ids", nargs="*",
+                                help="Assignment IDs to collect (default: all)")
+    collect_parser.set_defaults(func=collect_submissions)
 
     args = parser.parse_args()
     args.func(args)
 
 if __name__ == "__main__":
-    setup_logging('xdufacool.log', logging.DEBUG)
+    setup_logging('xdufacool.log', logging.INFO)
     logging.info("Starting xdufacool ...")
     main()
