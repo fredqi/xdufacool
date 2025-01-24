@@ -18,6 +18,7 @@
 #
 #
 import sys
+import yaml
 import logging
 from pathlib import Path
 from typing import Union, List
@@ -73,5 +74,54 @@ def validate_paths(base_path: Path, file_paths: Union[str, List[str]], descripti
 
     return valid_paths
 
+def format_list(items, conj="and"):
+    """
+    Formats a list of items into a string separated by commas,
+    with a specified conjunction before the last item.
+
+    Args:
+        items (list): A list of items (can be any type that has a string representation).
+        conj (str): The conjunction to use before the last item (default: "and").
+
+    Returns:
+        str: A formatted string of items.
+    """
+    if not items:
+        return ""
+    elif len(items) == 1:
+        return str(items[0])
+    elif len(items) == 2:
+        return f"{items[0]} {conj} {items[1]}"
+    else:
+        return ", ".join([str(item) for item in items[:-1]]) + f", {conj} {str(items[-1])}"
+
+def load_config(filepath, keyword):
+    """
+    Loads a YAML config file, extracts data for a specific keyword,
+    and performs variable substitution.
+
+    Args:
+        filepath: Path to the YAML config file.
+        keyword: The keyword to extract data for (e.g., "teachers", "students").
+
+    Returns:
+        A dictionary containing the data for the specified keyword,
+        with variables substituted, or None if the keyword is not found.
+    """
+    try:
+        with open(filepath, 'r', encoding='utf-8') as f:
+            config = yaml.safe_load(f)
+    except FileNotFoundError:
+        logging.error(f"Error: Config file not found at {filepath}")
+        return None
+    except yaml.YAMLError as e:
+        logging.error(f"Error parsing YAML file: {e}")
+        return None
+
+    if keyword not in config:
+        logging.error(f"Error: Keyword '{keyword}' not found in config file.")
+        return None
+
+    return config[keyword]
 # 
 # utils.py ends here

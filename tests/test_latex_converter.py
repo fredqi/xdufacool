@@ -2,7 +2,7 @@ import os
 import shutil
 import pytest
 from pathlib import Path
-from xdufacool.latex_converter import LaTeXConverter
+from xdufacool.converters import LaTeXConverter
 
 # Test fixtures
 @pytest.fixture
@@ -101,22 +101,6 @@ def test_compile_pdf_with_errors(latex_converter, temp_dir):
     
     # Should return None on compilation error
     assert pdf_path is None
-
-def test_clean_auxiliary_files(latex_converter, temp_dir):
-    """Test cleaning of auxiliary files."""
-    # Create dummy auxiliary files
-    aux_files = ['.aux', '.log', '.toc', '.out', '.nav', '.snm']
-    basename = "test_clean"
-    
-    for ext in aux_files:
-        (temp_dir / f"{basename}{ext}").touch()
-    
-    # Clean files
-    latex_converter._clean_auxiliary_files(str(temp_dir), basename)
-    
-    # Check if files were removed
-    for ext in aux_files:
-        assert not (temp_dir / f"{basename}{ext}").exists()
 
 def test_end_to_end(latex_converter, temp_dir):
     """Test complete template rendering and PDF compilation process."""

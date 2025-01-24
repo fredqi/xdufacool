@@ -20,14 +20,14 @@
 import os
 import csv
 import time
-import xlrd
-import xlwt
+# import xlrd
+# import xlwt
 import numpy as np
 from itertools import groupby
 from dataclasses import dataclass, field
 
 import shutil
-import click
+# import click
 
 
 @dataclass
@@ -55,19 +55,17 @@ class ScoreInterval(object):
             right_cond = scores <= self.right
         indices = np.logical_and(left_cond, right_cond)
         self.count = np.count_nonzero(indices)
-        self.percent = self.count*100.0/scores.size
+        self.percent = self.count*100.0/scores.size if scores.size > 0 else 0.0
 
 
 class ScoreStat(object):
-    def __init__(self, course_order, scores):
-        self.course_order = course_order
-        intervals = [ (90, 100, '优秀'), (80, 90, '良好'),
-                      (70, 80, '中等'), (60, 70, '及格'), (0, 60,'不及格')]
+    def __init__(self, scores):
+        intervals = [(90, 100, '优秀'), (80, 90, '良好'),
+                     (70, 80, '中等'), (60, 70, '及格'), (0, 60, '不及格')]
         self.stat = [ScoreInterval(*value) for value in intervals]
         self.average = 0.0
         self.n_students = 0
         self.__grading(scores)
-        # print(self)
 
     def __str__(self):
         lines = []
@@ -77,10 +75,22 @@ class ScoreStat(object):
 
     def __grading(self, scores):
         scs = np.array([float(x) if x else -1 for x in scores])
-        self.average = scs.mean()
+        self.average = scs.mean() if scs.size > 0 else 0.0
         self.n_students = scs.size
         for sc_interval in self.stat:
             sc_interval.grading(scs)
+
+    def get_table(self):
+        """
+        Returns the score statistics as a list of tuples.
+        Each tuple: (level, range, count, percentage)
+        """
+        table = []
+        for interval in self.stat:
+            range_str = f"{interval.left:.0f}-{interval.right:.0f}"
+            table.append((f"{interval.desc:^{7}}", f"{range_str:^{7}}",
+                         f"{interval.count:^{5}d}", f"{interval.percent:>{5}.1f}%"))
+        return table
 
 
 class ScoreAnalysis(object):
@@ -121,11 +131,13 @@ class ScoreAnalysis(object):
     def get_text(self, key):
         value = self._scores.get(key, -1)
         if key.find('percent') >= 0 or key.find('grad') >= 0:
-            text = f'{value:5.3f}'
+            text = f'{value*100:5.2f}%'
         else:
-            text = f'{value:4.2f}'
+            text = f'{value:4.1f}'
         return text
-   
+
+    def get_analysis(self):
+        return {key: self.get_text(key) for key in self._scores.keys()}
 
 def split_ranking(data, col_sub, col_rank):
     """Split scores into two categories according to whether it is ranked online."""
@@ -279,216 +291,224 @@ def write_xls(form, xlspath, sheet_name="sheet"):
     book.save(xlspath)
 
 
-@click.group()
-def xduscore():
-    pass
-
-
-@xduscore.command()
-@click.argument('students', nargs=-1, type=click.Path(exists=True))
-@click.option('-o', '--output', type=click.Path())
-@click.option('--name-xdu', default='姓名(文本)', type=click.STRING)
-@click.option('--sid-xdu', default='学号(文本)', type=click.STRING)
-@click.option('--name-baidu', default='学生姓名', type=click.STRING)
-@click.option('--sid-baidu', default='学生学号', type=click.STRING)
-@click.option('--sheet-baidu', default='学生名单', type=click.STRING)
-def merge(output, students, **kwargs):
-    """Read lists of students downloaded from Xidian, merge them to create a unified list."""    
-    students_all = {}
-    fields = [kwargs["name_xdu"], kwargs["sid_xdu"]]
-    for xlsfile in students:
-        data = load_xls(xlsfile)
-        name_col, sid_col = find_column_index(data[0], fields)
-        stus = value_dict(data, sid_col, name_col)
-        students_all = merge_students(students_all, stus)
-
-    l_sid, l_name = kwargs["sid_baidu"], kwargs["name_baidu"]
-    form = student_form(students_all, l_sid, l_name)
-    # write_csv(form, output.replace(".xls", ".csv"))
-    write_xls(form, output, kwargs["sheet_baidu"])
-
-@xduscore.command()
-@click.argument("scores", nargs=-1, type=click.Path())
-@click.option('--name-baidu', default='姓名', type=click.STRING)
-@click.option('--sid-baidu', default='学号', type=click.STRING)
-@click.option('--score-baidu', default='评分(0-100)', type=click.STRING)
-@click.option('--submitted', default='提交状态', type=click.STRING)
-@click.option('--time-submitted', default='学生提交时间', type=click.STRING)
-@click.option('--ranked', default='评阅状态', type=click.STRING)
-@click.option('--score-max', default=98, type=int)
-@click.option('--score-min', default=80, type=int)
-def rank(scores, **kwargs):
-    """Rank based submission order."""
-    fields = [kwargs['sid_baidu'], kwargs['score_baidu'],
-              kwargs['submitted'], kwargs['time_submitted'], kwargs['ranked']]
-    for xlsfile in scores:
-        data = load_xls(xlsfile)
-        header = data[0]
-        indices = find_column_index(header, fields)
-        col_sid, col_sc, col_sub, col_time, col_ranked = indices
-        data_rank, data_usub = split_ranking(data[1:], col_sub, col_ranked)
-        for row in data_usub:
-            row[col_sc] = 0
-        data_rank = time_based_rank(data_rank, col_sc, col_time,
-                                    kwargs['score_max'], kwargs['score_min'])
-        data = sorted(data_rank + data_usub,
-                      key=lambda row: row[col_sid])
-        write_xls([header] + data, xlsfile)
-
-        
-@xduscore.command()
-@click.argument("scores", nargs=-1, type=click.Path())
-@click.option("-o", "--output", type=click.Path())
-@click.option("-w", "--weights", multiple=True, type=click.FLOAT)
-@click.option("-t", "--tasks", multiple=True, type=click.STRING)
-@click.option('--name-baidu', default='姓名', type=click.STRING)
-@click.option('--sid-baidu', default='学号', type=click.STRING)
-@click.option('--score-baidu', default='评分(0-100)', type=click.STRING)
-def collect(scores, weights, tasks, output, **kwargs):
-    """Collected scores downloaded from AI studio and save to output."""
-    assert len(tasks) == len(weights)
-    assert len(scores) == len(weights)
-
-    scores_all, students = {}, {}
-    fields = [kwargs["sid_baidu"], kwargs["score_baidu"], kwargs["name_baidu"]]
-    for xlsfile, task in zip(scores, tasks):
-        data = load_xls(xlsfile)
-        sid_col, score_col, name_col = find_column_index(data[0], fields)
-        score_task = value_dict(data, sid_col, score_col, True)
-        scores_all[task] = score_task
-        
-        stus = value_dict(data, sid_col, name_col)
-        students = merge_students(students, stus)
-
-    weights_dict = {t: w for t, w in zip(tasks, weights)}
-    data, errors = merge_scores(scores_all, weights_dict)
-    fields = [kwargs["sid_baidu"]] + list(tasks) + ["加权平均分"]
-    form = score_dict_to_table(data, fields)
-    for row in filter(lambda x: x[-1] < 60, form[1:]):
+if __name__ == "__main__":
+    scores = np.array([95, 85, 75, 65, 55, 95, 85, 75, 65, 55])
+    score_stat = ScoreStat(scores)
+    # print(score_stat)
+    table = score_stat.get_table()
+    for row in table:
         print(row)
-    fmt = output.split(".")[-1]
-    if "csv" == fmt:
-        write_csv(form, output)
-    elif "xls" == fmt:
-        write_xls(form, output)
+
+# @click.group()
+# def xduscore():
+#     pass
+
+
+# @xduscore.command()
+# @click.argument('students', nargs=-1, type=click.Path(exists=True))
+# @click.option('-o', '--output', type=click.Path())
+# @click.option('--name-xdu', default='姓名(文本)', type=click.STRING)
+# @click.option('--sid-xdu', default='学号(文本)', type=click.STRING)
+# @click.option('--name-baidu', default='学生姓名', type=click.STRING)
+# @click.option('--sid-baidu', default='学生学号', type=click.STRING)
+# @click.option('--sheet-baidu', default='学生名单', type=click.STRING)
+# def merge(output, students, **kwargs):
+#     """Read lists of students downloaded from Xidian, merge them to create a unified list."""    
+#     students_all = {}
+#     fields = [kwargs["name_xdu"], kwargs["sid_xdu"]]
+#     for xlsfile in students:
+#         data = load_xls(xlsfile)
+#         name_col, sid_col = find_column_index(data[0], fields)
+#         stus = value_dict(data, sid_col, name_col)
+#         students_all = merge_students(students_all, stus)
+
+#     l_sid, l_name = kwargs["sid_baidu"], kwargs["name_baidu"]
+#     form = student_form(students_all, l_sid, l_name)
+#     # write_csv(form, output.replace(".xls", ".csv"))
+#     write_xls(form, output, kwargs["sheet_baidu"])
+
+# @xduscore.command()
+# @click.argument("scores", nargs=-1, type=click.Path())
+# @click.option('--name-baidu', default='姓名', type=click.STRING)
+# @click.option('--sid-baidu', default='学号', type=click.STRING)
+# @click.option('--score-baidu', default='评分(0-100)', type=click.STRING)
+# @click.option('--submitted', default='提交状态', type=click.STRING)
+# @click.option('--time-submitted', default='学生提交时间', type=click.STRING)
+# @click.option('--ranked', default='评阅状态', type=click.STRING)
+# @click.option('--score-max', default=98, type=int)
+# @click.option('--score-min', default=80, type=int)
+# def rank(scores, **kwargs):
+#     """Rank based submission order."""
+#     fields = [kwargs['sid_baidu'], kwargs['score_baidu'],
+#               kwargs['submitted'], kwargs['time_submitted'], kwargs['ranked']]
+#     for xlsfile in scores:
+#         data = load_xls(xlsfile)
+#         header = data[0]
+#         indices = find_column_index(header, fields)
+#         col_sid, col_sc, col_sub, col_time, col_ranked = indices
+#         data_rank, data_usub = split_ranking(data[1:], col_sub, col_ranked)
+#         for row in data_usub:
+#             row[col_sc] = 0
+#         data_rank = time_based_rank(data_rank, col_sc, col_time,
+#                                     kwargs['score_max'], kwargs['score_min'])
+#         data = sorted(data_rank + data_usub,
+#                       key=lambda row: row[col_sid])
+#         write_xls([header] + data, xlsfile)
 
         
-@xduscore.command()
-@click.argument("forms", nargs=-1, type=click.Path(exists=True))
-@click.option("-f", "--file-src", type=click.Path())
-@click.option("-s", "--score-src", default="期末成绩", type=click.STRING)
-@click.option('--score-dest', default='期末成绩(数字)', type=click.STRING)
-@click.option('--score-rename', default=False, is_flag=True,
-              help="Rename destination score to source.")
-@click.option('--sid-src', default='学号(文本)', type=click.STRING)
-@click.option('--sid-dest', default='学号(文本)', type=click.STRING)
-def fill(forms, **kwargs):
-    """Fill forms for uploading to Xidian."""
-    scores = load_xls(kwargs['file_src'])
-    fields = [kwargs["sid_src"], kwargs['score_src']]
-    sid_col, score_col = find_column_index(scores[0], fields)
-    for row in scores:
-        if isinstance(row[sid_col], float):
-            row[sid_col] = f'{row[sid_col]:.0f}'
-    scores_dict = value_dict(scores, sid_col, score_col, True)
+# @xduscore.command()
+# @click.argument("scores", nargs=-1, type=click.Path())
+# @click.option("-o", "--output", type=click.Path())
+# @click.option("-w", "--weights", multiple=True, type=click.FLOAT)
+# @click.option("-t", "--tasks", multiple=True, type=click.STRING)
+# @click.option('--name-baidu', default='姓名', type=click.STRING)
+# @click.option('--sid-baidu', default='学号', type=click.STRING)
+# @click.option('--score-baidu', default='评分(0-100)', type=click.STRING)
+# def collect(scores, weights, tasks, output, **kwargs):
+#     """Collected scores downloaded from AI studio and save to output."""
+#     assert len(tasks) == len(weights)
+#     assert len(scores) == len(weights)
 
-    for xlsfile in forms:
-        score_form = load_xls(xlsfile)
-        sid_col, score_col = find_column_index(score_form[0], [kwargs["sid_dest"], kwargs["score_dest"]])
-        if kwargs['score_rename']:
-            score_form[0][score_col] = kwargs['score_src']
-        fill_score_form(score_form, scores_dict, sid_col, score_col)
-        write_xls(score_form, xlsfile)
+#     scores_all, students = {}, {}
+#     fields = [kwargs["sid_baidu"], kwargs["score_baidu"], kwargs["name_baidu"]]
+#     for xlsfile, task in zip(scores, tasks):
+#         data = load_xls(xlsfile)
+#         sid_col, score_col, name_col = find_column_index(data[0], fields)
+#         score_task = value_dict(data, sid_col, score_col, True)
+#         scores_all[task] = score_task
+        
+#         stus = value_dict(data, sid_col, name_col)
+#         students = merge_students(students, stus)
+
+#     weights_dict = {t: w for t, w in zip(tasks, weights)}
+#     data, errors = merge_scores(scores_all, weights_dict)
+#     fields = [kwargs["sid_baidu"]] + list(tasks) + ["加权平均分"]
+#     form = score_dict_to_table(data, fields)
+#     for row in filter(lambda x: x[-1] < 60, form[1:]):
+#         print(row)
+#     fmt = output.split(".")[-1]
+#     if "csv" == fmt:
+#         write_csv(form, output)
+#     elif "xls" == fmt:
+#         write_xls(form, output)
+
+        
+# @xduscore.command()
+# @click.argument("forms", nargs=-1, type=click.Path(exists=True))
+# @click.option("-f", "--file-src", type=click.Path())
+# @click.option("-s", "--score-src", default="期末成绩", type=click.STRING)
+# @click.option('--score-dest', default='期末成绩(数字)', type=click.STRING)
+# @click.option('--score-rename', default=False, is_flag=True,
+#               help="Rename destination score to source.")
+# @click.option('--sid-src', default='学号(文本)', type=click.STRING)
+# @click.option('--sid-dest', default='学号(文本)', type=click.STRING)
+# def fill(forms, **kwargs):
+#     """Fill forms for uploading to Xidian."""
+#     scores = load_xls(kwargs['file_src'])
+#     fields = [kwargs["sid_src"], kwargs['score_src']]
+#     sid_col, score_col = find_column_index(scores[0], fields)
+#     for row in scores:
+#         if isinstance(row[sid_col], float):
+#             row[sid_col] = f'{row[sid_col]:.0f}'
+#     scores_dict = value_dict(scores, sid_col, score_col, True)
+
+#     for xlsfile in forms:
+#         score_form = load_xls(xlsfile)
+#         sid_col, score_col = find_column_index(score_form[0], [kwargs["sid_dest"], kwargs["score_dest"]])
+#         if kwargs['score_rename']:
+#             score_form[0][score_col] = kwargs['score_src']
+#         fill_score_form(score_form, scores_dict, sid_col, score_col)
+#         write_xls(score_form, xlsfile)
 
 
-@xduscore.command()
-@click.argument("classes", nargs=-1, type=click.Path(exists=True))
-@click.option("-k", "--homework", nargs=1, type=click.Path(exists=True))
-@click.option('--sid-xdu', default='学号(文本)', type=click.STRING)
-def organize(classes, homework, **kwargs):
-    """Organize homeworks donwloaded from baidu for archival."""
-    fields = [kwargs["sid_xdu"]]
-    student_classes = {}
-    for cls in classes:
-        class_name = cls.split(".")[0]
-        if not os.path.exists(class_name):
-            os.mkdir(class_name)
-        # hw_path = os.path.join(class_name, homework)
-        # if not os.path.exists(hw_path):
-        #     os.mkdir(hw_path)
-        data = load_xls(cls)
-        sid_col, = find_column_index(data[0], fields)
-        for row in data[1:]:
-            sid = row[sid_col]
-            student_classes[sid] = class_name
+# @xduscore.command()
+# @click.argument("classes", nargs=-1, type=click.Path(exists=True))
+# @click.option("-k", "--homework", nargs=1, type=click.Path(exists=True))
+# @click.option('--sid-xdu', default='学号(文本)', type=click.STRING)
+# def organize(classes, homework, **kwargs):
+#     """Organize homeworks donwloaded from baidu for archival."""
+#     fields = [kwargs["sid_xdu"]]
+#     student_classes = {}
+#     for cls in classes:
+#         class_name = cls.split(".")[0]
+#         if not os.path.exists(class_name):
+#             os.mkdir(class_name)
+#         # hw_path = os.path.join(class_name, homework)
+#         # if not os.path.exists(hw_path):
+#         #     os.mkdir(hw_path)
+#         data = load_xls(cls)
+#         sid_col, = find_column_index(data[0], fields)
+#         for row in data[1:]:
+#             sid = row[sid_col]
+#             student_classes[sid] = class_name
 
-    for path, _, files in os.walk(homework):
-        for name in files:
-            if ".pdf" == name[-4:].lower():
-                the_sid = name.split(".")[0].split("-")[-1]
-                if the_sid in student_classes:
-                    the_cls = student_classes[the_sid]
-                    hw_src = os.path.join(path, name)
-                    hw_dst = os.path.join(the_cls, "", name)
-                    # print(f"Copying {hw_src} to {hw_dst}...")
-                    shutil.copyfile(hw_src, hw_dst)
-                else:
-                    print(f"Cannot find the class for student {the_sid}.")
+#     for path, _, files in os.walk(homework):
+#         for name in files:
+#             if ".pdf" == name[-4:].lower():
+#                 the_sid = name.split(".")[0].split("-")[-1]
+#                 if the_sid in student_classes:
+#                     the_cls = student_classes[the_sid]
+#                     hw_src = os.path.join(path, name)
+#                     hw_dst = os.path.join(the_cls, "", name)
+#                     # print(f"Copying {hw_src} to {hw_dst}...")
+#                     shutil.copyfile(hw_src, hw_dst)
+#                 else:
+#                     print(f"Cannot find the class for student {the_sid}.")
                
 
-@xduscore.command()
-@click.argument("scores", nargs=1, type=click.Path(exists=True))
-@click.option("-k", "--homework", nargs=1, type=click.Path(exists=True))
-@click.option('--name-baidu', default='姓名', type=click.STRING)
-@click.option('--sid-baidu', default='学号', type=click.STRING)
-@click.option('--score-baidu', default='评分(0-100)', type=click.STRING)
-def homework(scores, homework, **kwargs):
-    score_hw = {}
-    for folder in os.listdir(homework):
-        stu_folder = os.path.join(homework, folder)
-        files = os.listdir(stu_folder)
-        score_hw[folder] = 100
+# @xduscore.command()
+# @click.argument("scores", nargs=1, type=click.Path(exists=True))
+# @click.option("-k", "--homework", nargs=1, type=click.Path(exists=True))
+# @click.option('--name-baidu', default='姓名', type=click.STRING)
+# @click.option('--sid-baidu', default='学号', type=click.STRING)
+# @click.option('--score-baidu', default='评分(0-100)', type=click.STRING)
+# def homework(scores, homework, **kwargs):
+#     score_hw = {}
+#     for folder in os.listdir(homework):
+#         stu_folder = os.path.join(homework, folder)
+#         files = os.listdir(stu_folder)
+#         score_hw[folder] = 100
 
-    data = load_xls(scores)
-    fields = [kwargs["sid_baidu"], kwargs["score_baidu"], kwargs["name_baidu"]]
-    sid_col, score_col, name_col = find_column_index(data[0], fields)
-    for idx in range(1, len(data)):
-        sid = data[idx][sid_col]
-        data[idx][score_col] = score_hw.get(sid, 0)
+#     data = load_xls(scores)
+#     fields = [kwargs["sid_baidu"], kwargs["score_baidu"], kwargs["name_baidu"]]
+#     sid_col, score_col, name_col = find_column_index(data[0], fields)
+#     for idx in range(1, len(data)):
+#         sid = data[idx][sid_col]
+#         data[idx][score_col] = score_hw.get(sid, 0)
 
-    write_xls(data, scores)
+#     write_xls(data, scores)
         
 
-@xduscore.command()
-@click.argument("accuracies", nargs=1, type=click.Path(exists=True))
-@click.argument("sheet", nargs=1, type=click.Path(exists=True))
-def challenge(accuracies, sheet, **kwargs):
-    """Assign scores based on challenge accuracies."""
-    with open(accuracies) as istream:
-        reader = csv.reader(istream)
-        header = next(reader)
-        scores = {}
-        for row in reader:
-            sid = row[0]
-            sc = round(float(row[1])*100)
-            if sc > 95:
-                sc = 100
-            if sc < 60:
-                sc = 60
-            scores[sid] = sc
-    # print("\n".join(scores.keys()))
+# @xduscore.command()
+# @click.argument("accuracies", nargs=1, type=click.Path(exists=True))
+# @click.argument("sheet", nargs=1, type=click.Path(exists=True))
+# def challenge(accuracies, sheet, **kwargs):
+#     """Assign scores based on challenge accuracies."""
+#     with open(accuracies) as istream:
+#         reader = csv.reader(istream)
+#         header = next(reader)
+#         scores = {}
+#         for row in reader:
+#             sid = row[0]
+#             sc = round(float(row[1])*100)
+#             if sc > 95:
+#                 sc = 100
+#             if sc < 60:
+#                 sc = 60
+#             scores[sid] = sc
+#     # print("\n".join(scores.keys()))
 
-    data = load_xls(sheet)
-    fields = ["学号", "竞赛", "姓名"]
-    sid_col, score_col, name_col = find_column_index(data[0], fields)
-    for idx in range(1, len(data)):
-        sid = str(int(data[idx][sid_col]))
-        if sid in scores:
-            data[idx][score_col] = scores[sid]
-        else:
-            print(sid, data[idx][sid_col], data[idx][name_col])
+#     data = load_xls(sheet)
+#     fields = ["学号", "竞赛", "姓名"]
+#     sid_col, score_col, name_col = find_column_index(data[0], fields)
+#     for idx in range(1, len(data)):
+#         sid = str(int(data[idx][sid_col]))
+#         if sid in scores:
+#             data[idx][score_col] = scores[sid]
+#         else:
+#             print(sid, data[idx][sid_col], data[idx][name_col])
 
-    write_xls(data, "AISE-2022-updated.xls")
+#     write_xls(data, "AISE-2022-updated.xls")
 
 # 
 # score_helper.py ends here

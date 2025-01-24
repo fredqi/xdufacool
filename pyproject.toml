@@ -22,13 +22,17 @@ classifiers = [
 ]
 dependencies = [
   "jinja2",
+  "mistletoe",
   "nbformat",
   "nbconvert",
+  "numpy",
   "jupytext",
+  "openpyxl",
   "requests",
   "pyyaml",
   "pypandoc",
   "pysocks",
+  "python-docx",
   "tqdm",
   "docx-mailmerge2",
 ]
@@ -43,7 +47,7 @@ dev = [
 homepage = "https://github.com/fredqi/xdufacool"
 
 [project.scripts]
-xdufacool = "xdufacool.models:main"
+xdufacool = "xdufacool.cli:main"
 pdf2pptx = "xdufacool.pdf2pptx:pdf2pptx"
 syllabus = "xdufacool.syllabus:syllabus_helper"
 xduscore = "xdufacool.score_helper:xduscore"

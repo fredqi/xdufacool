@@ -1,29 +1,31 @@
-from datetime import datetime
 import yaml
 import shutil
+import logging
+import tempfile
 import tarfile
 import jupytext
-from nbformat.v4 import new_markdown_cell, new_code_cell
-from jinja2 import Environment, FileSystemLoader
-from pathlib import Path
-import logging
-import argparse
-from xdufacool.utils import setup_logging, validate_paths
-from xdufacool.converters import NotebookConverter, PDFCompiler, LaTeXConverter
-from zipfile import ZipFile
-import tempfile
-from tqdm import tqdm
 import pypandoc
+from tqdm import tqdm
+from pathlib import Path
+from zipfile import ZipFile
+from datetime import datetime
+from jinja2 import Environment, FileSystemLoader
+from nbformat.v4 import new_markdown_cell, new_code_cell
+from mailmerge import MailMerge
+from dataclasses import dataclass, field
+from typing import List, Dict, Optional
 
+from xdufacool.utils import validate_paths, format_list
+from xdufacool.converters import NotebookConverter, PDFCompiler, LaTeXConverter
+from xdufacool.form_automa import SummaryComposer
+
+@dataclass
 class Teacher:
-    def __init__(self, teacher_id, name, email=None, department=None):
-        self.teacher_id = teacher_id
-        self.name = name
-        self.email = email
-        self.department = department
-
-    def __repr__(self):
-        return f"{type(self).__name__}({vars(self)}) at {hex(id(self))}"
+    teacher_id: str
+    name: str
+    email: str = None
+    department: str = None
+    title: str = None
 
     def __str__(self):
         return f"{self.name}"
@@ -41,18 +43,71 @@ class Student:
     def __str__(self):
         return f"{self.name} (ID: {self.student_id})"
 
+# 班级 (in Chinese)
+@dataclass
+class StudentGroup:
+    """A group of students."""
+    course: "Course"
+    group_id: str
+    admin_classes: List[str] = field(default_factory=list)    
+    teacher_ids: List[str] = field(default_factory=list)
+    students: Dict[str, "Student"] = field(default_factory=dict)
+    score_filename: str = None
+    summary_filepath: Optional[str] = None
+
+    def __str__(self):
+        class_names = format_list(self.admin_classes)
+        return f"Student Group for {self.group_id} ({class_names})"
+    
+    def add_student(self, student):
+        self.students[student.student_id] = student
+
+    def get_student(self, student_id):
+        return self.students.get(student_id)
+
+    def remove_student(self, student_id):
+        if student_id in self.students:
+            self.students.pop(student_id)
+
+    def add_admin_class(self, admin_class_name):
+        self.admin_classes.append(admin_class_name)
+
+    def create_summary(self, working_dir):
+        working_dir = Path(working_dir)
+        if not working_dir.exists():
+            logging.error(f"Working directory {working_dir} does not exist.")
+            return
+
+        composer = SummaryComposer(self.group_id)
+        composer.fill_titlepage(self, working_dir)
+        if not self.summary_filepath.exists():
+            logging.error(f"Summary file {self.summary_filepath} does not exist.")
+            return
+        composer.create_summary(self.summary_filepath,
+                                working_dir / self.course.summary['teaching_record'],
+                                working_dir / self.score_filename,
+                                working_dir / self.course.summary['text']),
+
+@dataclass
 class Course:
-    def __init__(self, course_id, abbreviation, topic, semester, teachers, teaching_plan, course_year, start_date, notification_template):
-        self.course_id = course_id
-        self.abbreviation = abbreviation
-        self.topic = topic
-        self.semester = semester
-        self.teachers = teachers
-        self.teaching_plan = teaching_plan
-        self.assignments = {}
-        self.course_year = course_year
-        self.start_date = start_date
-        self.notification_template = notification_template
+    course_id: str
+    abbreviation: str
+    topic: str
+    semester: str
+    # teaching_plan: str
+    course_year: int
+    start_date: datetime.date
+    end_date: datetime.date
+    teaching_hours: int
+    credits: float
+    notification_template: str
+    summary: Dict[str, Dict[str, str]] = field(default_factory=dict)
+    # summary_filepath: str
+    # score_filepath: str
+    # submission_dir: str
+    teachers: Dict[str, "Teacher"] = field(default_factory=dict)
+    groups: List["StudentGroup"] = field(default_factory=list)
+    assignments: Dict[str, "Assignment"] = field(default_factory=dict)
 
     def add_assignment(self, assignment):
         self.assignments[assignment.assignment_id] = assignment
@@ -75,27 +130,15 @@ class Course:
         """
         with open(config_path, 'r') as f:
             config = yaml.safe_load(f)
+        
+        course_conf = config['course']
+        course_conf['teachers'] = {item['teacher_id']: Teacher(**item) for item in config["teachers"]}
+        course = Course(**course_conf)
 
-        course_config = config['course']
-        start_date = course_config.get('start_date', datetime.now().strftime('%Y-%m-%d'))
-        course_data = {
-            'course_id': course_config['course_id'],
-            'abbreviation': course_config['abbreviation'],
-            'topic': course_config.get('topic', 'Unknown Topic'),
-            'semester': course_config.get('semester', 'Unknown Semester'),
-            'course_year': course_config.get('year', datetime.now().year),
-            'start_date': datetime.strptime(start_date, '%Y-%m-%d')
-        }
+        for item in config['groups']:
+            stduent_group = StudentGroup(course=course, **item)
+            course.groups.append(stduent_group)
 
-        course_data['teachers'] = []
-        for item in course_config.get('teachers', []):
-            teacher = Teacher(**item)
-            course_data['teachers'].append(teacher)
-
-        course_data['teaching_plan'] = course_config.get('teaching_plan', {})
-        course_data['notification_template'] = course_config.get('notification_template', 'notification.md.j2')
-        course = Course(**course_data)
-        # Handle assignments
         for assignment_config in config['assignments']:
             assignment_type = assignment_config['type']
             if assignment_type == 'coding':
@@ -122,7 +165,6 @@ class Course:
                 )
             else:
                 raise ValueError(f"Unknown assignment type: {assignment_type}")
-
             course.add_assignment(assignment)
 
         return course
@@ -174,7 +216,7 @@ class Assignment:
             'task_topic': self.title,
             'task_description': self.description,
             'due_date': self.due_date.strftime('%Y-%m-%d'),
-            'teachers': " and ".join([str(teacher) for teacher in self.course.teachers]),
+            'teachers': format_list(self.course.teachers),
         }
         logging.debug(f"Course context: {self.course} {self.assignment_folder.parent}")
         notification_template = self.course.notification_template
@@ -591,73 +633,3 @@ class ChallengeSubmission(Submission):
     def __repr__(self):
         return f"{type(self).__name__}({vars(self)}) at {hex(id(self))}"
 
-def collect_submissions(args):
-    """Handles the 'collect' subcommand."""
-    config_file = args.config
-    logging.info(f"Collecting submissions...")
-    course = Course.from_config(config_file)
-    logging.info(f"Course created: {course}")
-    submission_dir = Path(args.submission_dir)
-    assignment_ids = args.assignment_ids if args.assignment_ids else course.assignments.keys()
-    for assignment_id in assignment_ids:
-        assignment = course.assignments.get(assignment_id)
-        if assignment is None:
-            logging.error(f"Assignment with ID {assignment_id} not found.")
-            continue
-        logging.info(f"Collecting submissions for {assignment}")
-        assignment.collect_submissions(submission_dir)
-        logging.info("Collection process finished.")
-        assignment.merge_submissions(submission_dir)
-        logging.info("Merging process finished.")
-
-def create_assignment(args):
-    """Handles the 'create' subcommand to create an assignment package."""
-    config_file = args.config
-    output_dir = Path(args.output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
-
-    course = Course.from_config(config_file)
-    assignment_ids = args.assignment_ids if args.assignment_ids else course.assignments.keys()
-    for assignment_id in assignment_ids:
-        assignment = course.assignments.get(assignment_id)
-
-        if assignment is None:
-            logging.error(f"Assignment with ID {assignment_id} not found.")
-            continue
-
-        logging.info(f"Creating package for {assignment} ...")
-        tarball_path = assignment.prepare(output_dir)
-        if tarball_path is None:
-            logging.error(f"Failed to create distribution tarball for {assignment}.")
-            continue
-        assignment.generate_notification(output_dir)
-
-def main():
-    """Parses command-line arguments and dispatches to appropriate subcommands."""
-    parser = argparse.ArgumentParser(description="Manage assignments and submissions.")
-    parent_parser = argparse.ArgumentParser(add_help=False)
-    parent_parser.add_argument("-c", "--config", default="config.yml", help="Config file path")
-    subparsers = parser.add_subparsers(title="subcommands", dest="subcommand", required=True)
-
-    create_parser = subparsers.add_parser("create", parents=[parent_parser],
-                                          help="Create assignment for distribution")
-    create_parser.add_argument("-o", "--output-dir", default="dist",
-                                help="Output directory")
-    create_parser.add_argument("assignment_ids", nargs="*",
-                                help="Assignment IDs to create (default: all)")
-    create_parser.set_defaults(func=create_assignment)
-
-    collect_parser = subparsers.add_parser("collect", parents=[parent_parser],
-                                           help="Collect submissions")
-    collect_parser.add_argument("submission_dir", help="Submission directory")
-    collect_parser.add_argument("assignment_ids", nargs="*",
-                                help="Assignment IDs to collect (default: all)")
-    collect_parser.set_defaults(func=collect_submissions)
-
-    args = parser.parse_args()
-    args.func(args)
-
-if __name__ == "__main__":
-    setup_logging('xdufacool.log', logging.INFO)
-    logging.info("Starting xdufacool ...")
-    main()
