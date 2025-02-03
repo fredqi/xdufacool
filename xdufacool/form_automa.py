@@ -235,9 +235,7 @@ class Markdown2Docx(object):
             cell_a.merge(cell_b)
 
     def add_content(self, cell, contents):
-        # print(style)
         for idx, item in enumerate(contents):
-            logging.debug(f"Add content at {item.line_number:3d} of {type(item)}")
             if 0 == idx:
                 tblp = cell.paragraphs[0]
                 if "Heading 2" in self.styles:
@@ -685,15 +683,17 @@ class SummaryComposer(object):
         # for image in sorted(self.term.images):
         #     run.add_picture(image)
 
-    def fill_titlepage(self, student_group, working_dir):
+    def fill_titlepage(self, student_group, summary_config):
         """Fills the title page of the summary document using a template."""
-        template = Path(student_group.course.summary['template'])
+        working_dir = Path(summary_config.get('working_dir', '.'))        
+        template = Path(summary_config.get('template', ""))
+        logging.debug(f"Summary working dir: {working_dir} and template: {template}")
         if not template.exists():
             logging.error(f"Summary template {template} does not exist.")
             return
         teachers = student_group.course.teachers
         teachers_desc = "、".join([teachers[key].name for key in student_group.teacher_ids])
-        summary_date = datetime.strptime(student_group.course.summary['date'], "%Y-%m-%d")
+        summary_date = datetime.strptime(summary_config['date'], "%Y-%m-%d")
         summary_date_desc = summary_date.strftime("%Y年%m月%d日")
         merger = MailMerge(template)
         title_info = {"semester": student_group.course.semester,

@@ -1,8 +1,7 @@
-import yaml
 import shutil
+import tarfile
 import logging
 import tempfile
-import tarfile
 import jupytext
 import pypandoc
 from tqdm import tqdm
@@ -11,7 +10,6 @@ from zipfile import ZipFile
 from datetime import datetime
 from jinja2 import Environment, FileSystemLoader
 from nbformat.v4 import new_markdown_cell, new_code_cell
-from mailmerge import MailMerge
 from dataclasses import dataclass, field
 from typing import List, Dict, Optional
 
@@ -72,21 +70,20 @@ class StudentGroup:
     def add_admin_class(self, admin_class_name):
         self.admin_classes.append(admin_class_name)
 
-    def create_summary(self, working_dir):
-        working_dir = Path(working_dir)
+    def create_summary(self, summary_config):
+        working_dir = Path(summary_config.get('working_dir', '.'))
         if not working_dir.exists():
-            logging.error(f"Working directory {working_dir} does not exist.")
+            logging.error(f"Working directory not found: {working_dir}")
             return
-
         composer = SummaryComposer(self.group_id)
-        composer.fill_titlepage(self, working_dir)
+        composer.fill_titlepage(self, summary_config)
         if not self.summary_filepath.exists():
             logging.error(f"Summary file {self.summary_filepath} does not exist.")
             return
         composer.create_summary(self.summary_filepath,
-                                working_dir / self.course.summary['teaching_record'],
-                                working_dir / self.score_filename,
-                                working_dir / self.course.summary['text']),
+                                working_dir / summary_config.get('teaching_record', ""),
+                                working_dir / summary_config.get('score_file', ""),
+                                working_dir / summary_config.get('text', "README.md"))
 
 @dataclass
 class Course:
@@ -100,7 +97,7 @@ class Course:
     end_date: datetime.date
     teaching_hours: int
     credits: float
-    notification_template: str
+    # notification_template: str
     summary: Dict[str, Dict[str, str]] = field(default_factory=dict)
     # summary_filepath: str
     # score_filepath: str
@@ -118,51 +115,34 @@ class Course:
     def __str__(self):
         return f"{self.topic} ({self.course_id})"
 
-    @classmethod
-    def from_config(cls, config_path):
-        """Loads a Course object from a YAML configuration file.
-
-        Args:
-            config_path (str): Path to the YAML configuration file.
-
-        Returns:
-            Course: A Course object populated with data from the config file.
-        """
-        with open(config_path, 'r') as f:
-            config = yaml.safe_load(f)
-        
-        course_conf = config['course']
-        course_conf['teachers'] = {item['teacher_id']: Teacher(**item) for item in config["teachers"]}
-        course = Course(**course_conf)
-
-        for item in config['groups']:
-            stduent_group = StudentGroup(course=course, **item)
-            course.groups.append(stduent_group)
-
-        for assignment_config in config['assignments']:
-            assignment_type = assignment_config['type']
+    @staticmethod
+    def from_dict(data):
+        """Creates a Course instance from a dictionary."""
+        course_data = data['course']
+        teachers = {t['teacher_id']: Teacher(**t) for t in data['teachers']}
+        course = Course(
+            course_id=course_data['course_id'],
+            abbreviation=course_data['abbreviation'],
+            topic=course_data['topic'],
+            semester=course_data['semester'],
+            course_year=course_data['course_year'],
+            start_date=datetime.strptime(course_data['start_date'], '%Y-%m-%d'),
+            end_date=datetime.strptime(course_data['end_date'], '%Y-%m-%d'),
+            teaching_hours=course_data['teaching_hours'],
+            credits=course_data['credits'],
+            teachers=teachers,
+            # groups=groups,
+            # assignments=assignments
+        )
+        course.groups = [StudentGroup(course=course, **g) for g in data['groups']]
+        for assignment_data in data['assignments']:
+            assignment_type = assignment_data['type']
             if assignment_type == 'coding':
-                logging.info(f"Creating CodingAssignment for {assignment_config}")
-                assignment = CodingAssignment.from_dict(assignment_config, course)
+                assignment = CodingAssignment.from_dict(assignment_data, course)
             elif assignment_type == 'report':
-                assignment = ReportAssignment(
-                    assignment_id=assignment_config['assignment_id'],
-                    course=course,
-                    title=assignment_config['title'],
-                    description=assignment_config['description'],
-                    due_date=datetime.strptime(assignment_config['due_date'], '%Y-%m-%d'),
-                    instructions=assignment_config['report_config']['instructions']
-                )
+                assignment = ReportAssignment.from_dict(assignment_data, course)
             elif assignment_type == 'challenge':
-                evaluation_metric = assignment_config['challenge_config']['evaluation_metric']
-                assignment = ChallengeAssignment(
-                    assignment_id=assignment_config['assignment_id'],
-                    course=course,
-                    title=assignment_config['title'],
-                    description=assignment_config['description'],
-                    due_date=datetime.strptime(assignment_config['due_date'], '%Y-%m-%d'),
-                    evaluation_metric=evaluation_metric
-                )
+                assignment = ChallengeAssignment.from_dict(assignment_data, course)
             else:
                 raise ValueError(f"Unknown assignment type: {assignment_type}")
             course.add_assignment(assignment)
@@ -205,7 +185,7 @@ class Assignment:
     def get_submission(self, student_id):
         return self.submissions.get(student_id)
 
-    def generate_notification(self, output_dir):
+    def generate_notification(self, distribution_dir, notification_template):
         """Generates a notification for the assignment using Jinja2 directly.
 
         Args:
@@ -216,10 +196,9 @@ class Assignment:
             'task_topic': self.title,
             'task_description': self.description,
             'due_date': self.due_date.strftime('%Y-%m-%d'),
-            'teachers': format_list(self.course.teachers),
+            'teachers': format_list(list(self.course.teachers.values())),
         }
         logging.debug(f"Course context: {self.course} {self.assignment_folder.parent}")
-        notification_template = self.course.notification_template
         env = Environment(loader=FileSystemLoader(self.assignment_folder.parent))
         # template_file = self.assignment_folder.parent / notification_template
         # with open(template_file, 'r') as f:
@@ -231,7 +210,7 @@ class Assignment:
         template = env.get_template(notification_template)
         markdown_content = template.render(context)
         try:
-            output_html_path = output_dir / f'notification-{self.common_name()}.html'
+            output_html_path = distribution_dir / f'notification-{self.common_name()}.html'
             pypandoc.convert_text(markdown_content, 'html', format='md', outputfile=str(output_html_path))
             logging.info(f'Generated HTML notification: {output_html_path}')
 

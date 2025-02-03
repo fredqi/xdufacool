@@ -29,6 +29,7 @@ from xdufacool.utils import setup_logging
 from xdufacool.mail_helper import MailHelper
 from xdufacool.metrics import ClassificationAccuracy
 from xdufacool.metrics import LeaderBoardItem, LeaderBoard
+from xdufacool.models import Course
 
 
 def load_and_hash(filename):
@@ -101,28 +102,27 @@ class Homework():
         # comment: to reply incorrect submissions
         Homework.mail_template = template
 
-    def __init__(self, batch=False, **kwargs):
-        """Initialize homework with a given dict."""
-        for key, value in kwargs.items():
-            setattr(self, key, value)            
-        
-        if not hasattr(self, 'descriptor'):
-            desc = f'{self.subject}-{self.homework_id}'
-            self.descriptor = desc
-        if not os.path.exists(self.descriptor):
-            os.mkdir(self.descriptor)
+    def __init__(self, assignment_data, batch=False):
+        """Initialize homework with data from YAML."""
+        self.assignment_id = assignment_data['assignment_id']
+        self.subject = assignment_data.get('subject', '')
+        self.due_date = assignment_data['due_date']
+        self.folder = assignment_data['folder']
+        self.descriptor = f'{self.subject}-{self.assignment_id}'
 
-        if not hasattr(self, 'conditions'):
-            mconds = []
-            if hasattr(self, 'descriptor'):
-                mconds.append(f'SUBJECT "{self.descriptor}"')
-            elif hasattr(self, 'subject'):
-                mconds.append(f'SUBJECT "{self.subject}"')
-            if hasattr(self, 'date_after'):
-                mconds.append(f'SINCE {self.date_after}')
-            if not batch:
-                mconds.append('Unseen')
-            self.conditions = ' '.join(mconds)
+        if not os.path.exists(self.descriptor):
+            os.makedirs(self.descriptor)
+
+        mconds = []
+        if self.descriptor:
+            mconds.append(f'SUBJECT "{self.descriptor}"')
+        elif self.subject:
+            mconds.append(f'SUBJECT "{self.subject}"')
+        if hasattr(self, 'date_after'):
+            mconds.append(f'SINCE {self.date_after}')
+        if not batch:
+            mconds.append('Unseen')
+        self.conditions = ' '.join(mconds)
 
         if hasattr(self, 'gt_class'):
             self.metric = ClassificationAccuracy(self.gt_class)
@@ -245,6 +245,7 @@ class Submission():
         from_address = (Homework.name_teacher, Homework.email_teacher)
         msg['From'] = formataddr(from_address)
         to_addr = self.info['from']
+        logging.debug(f"to_addr: {to_addr}")
         msg['To'] = formataddr((self.info['name'], to_addr))
         msg['In-Reply-To'] = self.info['message-id']
         msg['Subject'] = Header(self.info['subject'], 'utf-8')
@@ -271,7 +272,9 @@ class Submission():
             data['comment'] += u"\n！ 缺少作业附件。\n"
 
         body = Homework.mail_template.format(**data)
+        logging.debug(f"body: {body}")
         msg.attach(MIMEText(body, 'plain', 'utf-8'))
+        logging.debug(f"msg: {msg}")
         return to_addr, msg
 
     def is_confirmed(self):
@@ -287,42 +290,49 @@ class Submission():
 class HomeworkManager:
     """The class for processing homework submitted via mail."""
 
-    def __init__(self, configfile):
-        """Initialize the class from the config file."""
+    def __init__(self, course, check_config):
+        """Initialize the class from the Course object."""
+        self.course = course
         self.homeworks = {}
-        self.submissions  = dict()
-        self.verbose    = True
+        self.submissions = dict()
+        self.verbose = True
         self.mail_label = '"[Gmail]/All Mail"'
-        
-        config = ConfigParser(interpolation=ExtendedInterpolation())
-        config.read(configfile)
 
-        cfg_general, cfg_email = config['general'], config['email']
-        Homework.init_static(config['teacher']['name'],
-                             cfg_email['address'], cfg_email['template'])
+        teacher = list(self.course.teachers.values())[0]
+        Homework.init_static(teacher.name, check_config.get('email', ""),
+                             check_config.get('email_template', ""))
+        
         # Setup the mail_helper
-        self.testing = cfg_general.getboolean('testing')        
-        self.batch   = cfg_general.getboolean('batch')
-        self.download   = cfg_general['download']
+        self.testing = check_config.get('testing', False)
+        self.batch = check_config.get('batch', False)
+        self.download = check_config.get('download', 'latest')
         options = {'testing': self.testing,
                    'batch': self.batch,
                    'download': self.download}
         logging.debug(f"  - options: {options}")
-        for hw_key in cfg_general['homeworks'].split(','):
-            hw_key = hw_key.strip()
-            cfg_homework = config[f"homework_{hw_key}"]
-            self.homeworks[hw_key] = Homework(batch=self.batch, **cfg_homework)
-        proxy = None
-        if 'proxy_ip' in cfg_general:
-            proxy = cfg_general['proxy_ip'], cfg_general.getint('proxy_port')
-        imap_server, smtp_server = cfg_email['imap_server'], cfg_email['smtp_server']
+
+        for assignment_id, assignment_data in self.course.assignments.items():
+            hw_data = {"assignment_id": assignment_id,
+                       "subject": assignment_data.course.abbreviation,
+                       "due_date": assignment_data.due_date,
+                       "folder": check_config.get('base_dir', "")}
+            self.homeworks[assignment_id] = Homework(hw_data, batch=self.batch)
+
+        proxy = check_config.get('proxy', None)
+        if proxy:
+            proxy = proxy.split(':')
+            proxy = proxy[0], int(proxy[1])
+
+        imap_server = check_config.get('imap_server', "imap.gmail.com")
+        smtp_server = check_config.get('smtp_server', "smtp.gmail.com")
+
         if self.testing:
             self.mail_helper = MailHelper(imap_server, proxy=proxy)
         else:
-            self.mail_helper = MailHelper(imap_server, smtp_server,
-                                          proxy=proxy)
-        self.mail_helper.login(Homework.email_teacher, cfg_email['password'])
-        logging.info(f"  Logged in as {cfg_email['address']}.")
+            self.mail_helper = MailHelper(imap_server, smtp_server, proxy=proxy)
+
+        self.mail_helper.login(Homework.email_teacher, check_config.get('email_password', ""))
+        logging.info(f"  Logged in as {Homework.email_teacher}.")
 
     def check_headers(self, homework):
         """Fetch email headers."""
@@ -388,8 +398,8 @@ class HomeworkManager:
                 if hw.accs:
                     print(hw.student_id, max(hw.accs), len(hw.accs), len(hw.emails), sep=',')
 
+            to_addr, msg = hw.create_confirmation()
             if not self.testing:
-                to_addr, msg = hw.create_confirmation()
                 self.mail_helper.send_email(Homework.email_teacher, to_addr, msg)
                 self.mail_helper.flag(hw.latest_email_uid, ['Seen'])
                 logging.debug(f"  {hw.latest_email_uid} {hw.info['subject']} confirmation sent.")
@@ -465,9 +475,9 @@ def check_homeworks():
             logging.info(f'* [{homework.descriptor}] Checking email headers...')
             mgr.check_headers(homework)
             logging.info(f'* [{homework.descriptor}] Sending confirmation emails...')
-            mgr.send_confirmation(homework)
-            if hasattr(homework, 'leaderboard'):
-                homework.leaderboard.save()
+            # mgr.send_confirmation(homework)
+            # if hasattr(homework, 'leaderboard'):
+            # homework.leaderboard.save()
     except KeyboardInterrupt as error:
         logging.error("! KeyboardInterrupt: Interrupted by user from keyword.")
         sys.exit(1)
