@@ -1,10 +1,14 @@
+import yaml
 import logging
 import argparse
+import sys
+import imaplib
 from pathlib import Path
-import yaml  # Import PyYAML
 from xdufacool.models import Course
-from xdufacool.utils import setup_logging
-from xdufacool.homework_manager import HomeworkManager
+from xdufacool.utils import setup_logging, load_config
+from xdufacool.collectors import LocalSubmissionCollector, EmailSubmissionCollector
+from xdufacool.mail_helper import MailHelper
+
 
 def load_config(config_file, task_name):
     """Loads the YAML configuration file, checks its existence, constructs the Course instance,
@@ -21,33 +25,39 @@ def load_config(config_file, task_name):
     course = Course.from_dict(data)
     logging.info(f"Course created: {course}")
     task_config = data.get('tasks', {}).get(task_name, {})
+    logging.debug(f"{task_name} config: {task_config}")
     return course, task_config
 
 def collect_submissions(args):
     """Handles the 'collect' subcommand."""
-    logging.info(f"Collecting submissions...")
     course, collect_config = load_config(args.config, 'collect')
     if course is None:
-        return  # load_config will have logged an error
-
-    submission_dir = Path(args.submission_dir)
-    if not submission_dir.exists():
-        logging.error(f"Submission directory not found: {submission_dir}")
+        return
+    
+    local_dir = Path(collect_config.get('local_dir', ''))
+    if not local_dir.exists():
+        logging.error(f"Directory not found: {local_dir}")
         return
 
+    logging.info(f"Collecting submissions from {local_dir}...")
     assignment_ids = args.assignment_ids if args.assignment_ids else course.assignments.keys()
+    
     for assignment_id in assignment_ids:
         assignment = course.assignments.get(assignment_id)
         if assignment is None:
             logging.error(f"Assignment with ID {assignment_id} not found.")
             continue
-        logging.info(f"Collecting submissions for {assignment}")
-        # TODO: add collect_config
-        logging.debug(f"Collect config: {collect_config}")
-        assignment.collect_submissions(submission_dir)
-        logging.info("Collection process finished.")
-        assignment.merge_submissions(submission_dir)
-        logging.info("Merging process finished.")
+        logging.info(f"* Collecting submissions for {assignment}")
+        
+        try:
+            collector = LocalSubmissionCollector(assignment, local_dir)
+            collector.collect_submissions()
+            logging.info("* Collection process finished.")
+            
+            assignment.merge_submissions(local_dir)
+            logging.info("* Merging process finished.")
+        except Exception as e:
+            logging.error(f"Error processing {assignment_id}: {e}")
 
 def create_assignment(args):
     """Handles the 'create' subcommand to create an assignment package."""
@@ -88,40 +98,54 @@ def check_submissions(args):
     """Handles the 'check' subcommand to process email submissions."""
     course, check_config = load_config(args.config, 'check')
     if course is None:
-        return  # load_config will have logged an error
+        return
 
-    mgr = None
+    local_dir = Path(check_config.get('local_dir', '.'))
+    if not local_dir.exists():
+        local_dir.mkdir(parents=True)
+
+    mail_helper = None
     try:
-        logging.info(f'* Loading {args.config}...')
-        mgr = HomeworkManager(course, check_config)
-        for hw_key, homework in mgr.homeworks.items():
-            logging.info(f'* [{homework.descriptor}] Checking email headers...')
-            mgr.check_headers(homework)
-            logging.info(f'* [{homework.descriptor}] Sending confirmation emails...')
-            mgr.send_confirmation(homework)
-            if hasattr(homework, 'leaderboard'):
-                homework.leaderboard.save()
-    except KeyboardInterrupt as error:
-        logging.error("! KeyboardInterrupt: Interrupted by user from keyword.")
+        # Setup mail helper
+        proxy = check_config.get('proxy', None)
+        if proxy:
+            proxy = proxy.split(':')
+            proxy = proxy[0], int(proxy[1])
+
+        imap_server = check_config.get('imap_server', "imap.gmail.com")
+        smtp_server = check_config.get('smtp_server', "smtp.gmail.com")
+        testing = check_config.get('testing', False)
+
+        if testing:
+            mail_helper = MailHelper(imap_server, proxy=proxy)
+        else:
+            mail_helper = MailHelper(imap_server, smtp_server, proxy=proxy)
+
+        mail_helper.login(check_config.get('email', ""), check_config.get('email_password', ""))
+        logging.info(f"Logged in as {check_config.get('email', '')}")
+
+        # Process each assignment
+        for assignment_id, assignment in course.assignments.items():
+            logging.info(f"* Processing {assignment}")
+            collector = EmailSubmissionCollector(
+                assignment, 
+                mail_helper,
+                local_dir,
+                mail_label=check_config.get('mail_label', '"[Gmail]/All Mail"')
+            )
+            collector.collect_submissions()
+            logging.info("* Collection process finished")
+
+    except (KeyboardInterrupt, TimeoutError, AttributeError, 
+            ConnectionResetError, imaplib.IMAP4.error) as e:
+        logging.error(f"Error: {type(e).__name__}: {str(e)}")
         sys.exit(1)
-    except TimeoutError as error:
-        logging.error(f"! TimeoutError: {error.strerror} when connecting to email server.")
-        sys.exit(error.errno)
-    except AttributeError as error:
-        logging.error(f"! AttributeError: {error}.")
-        sys.exit(1)
-    except ConnectionResetError as error:
-        logging.error(f"{type(error)}: {error}")
-    except imaplib.IMAP4.error as err:
-        msg = err.args[0].decode()
-        logging.error(f"! Log in failed with: {msg}.")
-        sys.exit(1)
-    except Exception as error:
-        logging.error(f"! {type(error)}: {error}")
+    except Exception as e:
+        logging.error(f"Unexpected error: {type(e).__name__}: {str(e)}")
     finally:
-        if mgr:
-            logging.info('* Logout email servers...')
-            mgr.quit()
+        if mail_helper:
+            logging.info('* Logging out from email servers...')
+            mail_helper.quit()
 
 def main():
     """Parses command-line arguments and dispatches to appropriate subcommands."""
@@ -140,7 +164,7 @@ def main():
 
     collect_parser = subparsers.add_parser("collect", parents=[parent_parser],
                                            help="Collect submissions")
-    collect_parser.add_argument("submission_dir", help="Submission directory")
+    # collect_parser.add_argument("submission_dir", help="Submission directory")
     collect_parser.add_argument("assignment_ids", nargs="*",
                                 help="Assignment IDs to collect (default: all)")
     collect_parser.set_defaults(func=collect_submissions)
@@ -155,7 +179,7 @@ def main():
     check_parser.set_defaults(func=check_submissions)
 
     args = parser.parse_args()
-    setup_logging('xdufacool.log', logging.INFO)
+    setup_logging('xdufacool.log', logging.DEBUG)
     logging.info("Starting xdufacool ...")
     logging.debug(f"Args: {args}")
     args.func(args)
