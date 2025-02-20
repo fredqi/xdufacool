@@ -7,7 +7,6 @@ from pathlib import Path
 from xdufacool.models import Course
 from xdufacool.utils import setup_logging, load_config
 from xdufacool.collectors import LocalSubmissionCollector, EmailSubmissionCollector
-from xdufacool.mail_helper import MailHelper
 
 
 def load_config(config_file, task_name):
@@ -99,53 +98,19 @@ def check_submissions(args):
     course, check_config = load_config(args.config, 'check')
     if course is None:
         return
-
-    local_dir = Path(check_config.get('local_dir', '.'))
-    if not local_dir.exists():
-        local_dir.mkdir(parents=True)
-
-    mail_helper = None
     try:
-        # Setup mail helper
-        proxy = check_config.get('proxy', None)
-        if proxy:
-            proxy = proxy.split(':')
-            proxy = proxy[0], int(proxy[1])
-
-        imap_server = check_config.get('imap_server', "imap.gmail.com")
-        smtp_server = check_config.get('smtp_server', "smtp.gmail.com")
-        testing = check_config.get('testing', False)
-
-        if testing:
-            mail_helper = MailHelper(imap_server, proxy=proxy)
-        else:
-            mail_helper = MailHelper(imap_server, smtp_server, proxy=proxy)
-
-        mail_helper.login(check_config.get('email', ""), check_config.get('email_password', ""))
-        logging.info(f"Logged in as {check_config.get('email', '')}")
-
-        # Process each assignment
         for assignment_id, assignment in course.assignments.items():
             logging.info(f"* Processing {assignment}")
-            collector = EmailSubmissionCollector(
-                assignment, 
-                mail_helper,
-                local_dir,
-                mail_label=check_config.get('mail_label', '"[Gmail]/All Mail"')
-            )
+            collector = EmailSubmissionCollector(assignment, check_config)
             collector.collect_submissions()
+            collector.send_confirmations()
             logging.info("* Collection process finished")
-
     except (KeyboardInterrupt, TimeoutError, AttributeError, 
             ConnectionResetError, imaplib.IMAP4.error) as e:
         logging.error(f"Error: {type(e).__name__}: {str(e)}")
         sys.exit(1)
     except Exception as e:
         logging.error(f"Unexpected error: {type(e).__name__}: {str(e)}")
-    finally:
-        if mail_helper:
-            logging.info('* Logging out from email servers...')
-            mail_helper.quit()
 
 def main():
     """Parses command-line arguments and dispatches to appropriate subcommands."""

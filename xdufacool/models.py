@@ -217,65 +217,6 @@ class Assignment:
         except Exception as e:
             logging.error(f'Error during notification generation or conversion: {e}')
 
-    def collect_submissions(self, base_dir):
-        """
-        Collects submissions for this assignment from a given directory.
-
-        Args:
-            submission_dir (str): The directory to search for submissions.
-
-        Returns:
-            list: A list of dictionaries, where each dictionary represents a submission
-                  and contains the extracted information (e.g., student_id, assignment_id, file_path).
-        """
-        submission_dir = Path(base_dir) / self.common_name()
-        logging.info(f"Collecting submissions from {submission_dir} ...")
-        if not submission_dir.exists():
-            logging.error(f"Error: Directory {submission_dir} does not exist.")
-            return None        
-        file_paths = list(submission_dir.rglob(f"{self.common_name()}*"))
-        file_paths.sort(key=lambda x: (x.suffix.lower() != '.pdf', x))
-        pbar = tqdm(file_paths, desc="Processing submissions")
-        for file_path in pbar:
-            relative_path = file_path.relative_to(submission_dir)
-            logging.info(f"Processing: {relative_path}")
-            if not file_path.is_file():
-                logging.debug(f"Skipping {relative_path}")
-                continue
-            student_id, student_name = file_path.stem.split('-')[-2:]
-            if not student_id in self.submissions:
-                student = Student(student_id, student_name)
-                pbar.set_description(f"Processing {student}")
-                submission_date = datetime.fromtimestamp(file_path.stat().st_mtime)
-                if isinstance(self, CodingAssignment):
-                    submission_class = CodingSubmission
-                elif isinstance(self, ReportAssignment):
-                    submission_class = ReportSubmission
-                elif isinstance(self, ChallengeAssignment):
-                    submission_class = ChallengeSubmission
-                else:
-                    logging.debug(f"Unknown assignment type: {type(self)}")
-                    continue
-                submission = submission_class(self, student, submission_date)
-                self.add_submission(submission)
-            else:
-                submission = self.submissions[student_id]
-                logging.info(f"{submission} already exists.")
-
-            file_ext = file_path.suffix.lower()
-            if file_ext in self.accepted_extensions['compressed']:
-                submission.generate_report(relative_path, submission_dir)
-            elif file_ext in self.accepted_extensions['document']:
-                submission.add_report(submission_dir, relative_path)                
-            elif file_ext in self.alternative_extensions['document']:
-                # TODO: Implement conversion from .doc, .docx to PDF
-                logging.warning(f"To convert: {relative_path}")
-            elif file_ext in self.alternative_extensions['compressed']:
-                # TODO: Implement extraction of alternative compressed formats (e.g., .rar, .7z)
-                logging.warning(f"To decompress manually: {relative_path}")
-            else:
-                logging.warning(f"Ignore: {relative_path}")
-
     def merge_submissions(self, base_dir, output_name=None):
         """
         Merges all PDF submissions for the assignment into a single PDF file.
