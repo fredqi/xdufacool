@@ -57,8 +57,8 @@ class PDFCompiler:
                 if result.returncode != 0:
                     success = False
                     logging.error(f"LaTeX compilation failed ({basename}, attempt {i+1})")
-                    # logging.error(f"Command output:\n{result.stdout}")
-                    logging.error(f"Command error:\n{result.stderr}")
+                    logging.error(f"Command output:\n{result.stdout}")
+                    # logging.error(f"Command error:\n{result.stderr}")
                     clean_up = False
                     break
 
@@ -213,7 +213,6 @@ class NotebookConverter:
             latex_file = output_dir / f"{ipynb_file.stem}.tex"
             with open(latex_file, 'w') as f:
                 f.write(body)
-
             return latex_file
 
         except Exception as e:
@@ -226,11 +225,11 @@ class NotebookConverter:
             source_path = Path(assignment_dir) / fig
             target_path = Path(output_dir) / fig
             if not target_path.exists():
-                logging.info(f"Copying {fig} from {assignment_dir} to {output_dir}")
+                logging.debug(f"    Copying figure {fig} to {output_dir}")
                 if source_path.exists():
                     shutil.copy2(source_path, target_path)
                 else:
-                    logging.warning(f"Figure '{fig}' not found in {assignment_dir}.")
+                    logging.warning(f"  ! Figure '{fig}' not found in {assignment_dir}.")
 
     def _truncate_long_outputs(self, nb):
         """

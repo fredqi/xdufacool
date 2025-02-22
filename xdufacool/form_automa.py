@@ -32,7 +32,7 @@ from datetime import datetime
 from jinja2 import Environment, FileSystemLoader
 # from dataclasses import dataclass, field, asdict, fields
 from configparser import ConfigParser
-from configparser import ExtendedInterpolation
+# from configparser import ExtendedInterpolation
 
 from xdufacool.score_helper import ScoreStat
 from xdufacool.score_helper import ScoreAnalysis
@@ -123,7 +123,7 @@ class MarkdownDocxMerger:
                         sections[sec_title] = {}
                     elif 2 == item.level:
                         key = self.get_text(item)
-                        print(key)
+                        # print(key)
                         sections[sec_title][key] = []                        
                 else:
                     sections[sec_title][key].append(self.get_text(item))                    
@@ -180,7 +180,7 @@ class Markdown2Docx(object):
         self.styles = styles
         self.sections = {}
         # with open(summary_markdown, 'r') as istream:
-        logging.debug("* Initializing Markdown2Docx ...")
+        logging.debug("    Initializing Markdown2Docx ...")
         doc = mistletoe.Document(summary_markdown)
         for item in doc.children:
             if isinstance(item, Heading) and 1 == item.level:
@@ -325,6 +325,7 @@ class Markdown2Docx(object):
 class RowMapper(object):
     def __init__(self, keys, headers):
         self.indices = []
+        # logging.debug(f"RowMapper: {keys} {headers}")
         for key in keys:
             self.indices.append(headers.index(key))
 
@@ -486,11 +487,15 @@ def sheet_replace():
 class SummaryComposer(object):
     """Composer for teaching summary."""
 
-    def __init__(self, course_order):
+    def __init__(self, course_order, base_dir, workspace_dir):
         self.table_width = Cm(15)
         self.table_height = Cm(22.5)
         self.course_order = course_order
         self.document = None
+        self.base_dir = base_dir
+        self.summary_dir = workspace_dir / "summary"
+        self.summary_dir.mkdir(parents=True, exist_ok=True)
+        logging.debug(f"    Summary dir: {self.summary_dir.relative_to(self.base_dir)}")
         
     # def __init__(self, course, term):
     #     self.course = course
@@ -527,7 +532,7 @@ class SummaryComposer(object):
     #         print("  ", fmt.font.name, fmt.font.size, fmt.font.bold)
     #         print("  ", fmt.paragraph_format.line_spacing)
     #         print("  ", fmt.paragraph_format.left_indent)
-    #         print("  ", fmt.paragraph_format.first_line_indent)            
+    #         print("  ", fmt.paragraph_format.first_line_indent)
 
     def config_styles(self):
         self.styles = {}
@@ -627,7 +632,8 @@ class SummaryComposer(object):
             row_cells = table.add_row().cells
             self.set_center(row_cells[0])
             self.set_bold(row_cells[0], f"{idx:d}")
-            # print(values, type(values[0]))
+            # rint(values, type(values[0]))            
+            # logging.debug(f"{idx:d} {values[0]}")
             row_cells[1].text = f"{values[0]:%Y-%m-%d}"
             self.set_center(row_cells[1])
             
@@ -685,11 +691,12 @@ class SummaryComposer(object):
 
     def fill_titlepage(self, student_group, summary_config):
         """Fills the title page of the summary document using a template."""
-        working_dir = Path(summary_config.get('working_dir', '.'))        
-        template = Path(summary_config.get('template', ""))
-        logging.debug(f"Summary working dir: {working_dir} and template: {template}")
+        # working_dir = Path(summary_config.get('working_dir', '.')) 
+        # template = Path(summary_config.get('template', ""))
+        template = self.base_dir / 'templates' / summary_config.get('template', '')
+        logging.debug(f"    Using template: {template.relative_to(self.base_dir)}")
         if not template.exists():
-            logging.error(f"Summary template {template} does not exist.")
+            logging.error(f"! Summary template {template.relative_to(self.base_dir)} does not exist.")
             return
         teachers = student_group.course.teachers
         teachers_desc = "、".join([teachers[key].name for key in student_group.teacher_ids])
@@ -703,12 +710,13 @@ class SummaryComposer(object):
                       "classes": ", ".join(student_group.admin_classes),
                       "teachers": teachers_desc,
                       "summary_date": summary_date_desc}
-        logging.debug(f"Title info: {title_info}")
+        # logging.debug(f"    Title info: {title_info}")
         merger.merge(**title_info)
 
         parts = ["教学一览表", student_group.course.topic, student_group.course.semester, student_group.group_id]
         filename = '-'.join(parts) + ".docx"
-        student_group.summary_filepath = working_dir / filename
+        logging.info(f"* Creating summary {filename}")
+        student_group.summary_filepath = self.summary_dir / filename
         merger.write(student_group.summary_filepath)
 
     def fill_score_analysis(self, score_filepath, summary_text):
@@ -723,19 +731,13 @@ class SummaryComposer(object):
 
     def create_summary(self, summary_filepath, teaching_records, score_filepath, summary_text):
         self.document = docx.Document(summary_filepath)
-        # self.setup_core_properties()
         self.config_styles()
         wb = openpyxl.load_workbook(teaching_records)
-        # print(wb.sheetnames)
         self.teaching_records = wb.active
-        # self.load_scores(score_filepath)
+        logging.debug(f"    Using summary text: {summary_text.relative_to(self.base_dir)}")
+        logging.debug(f"    Using score file: {score_filepath.relative_to(self.base_dir)}")
         rendered_markdown = self.fill_score_analysis(score_filepath, summary_text)
         # print(rendered_markdown)
-        # text_filepath = path.join(term.data_dir, term.summary_text)
-        # self.md2docx = Markdown2Docx(self.score_stat,
-        #                              self.score_analysis,
-        #                              summary_text,
-        #                              self.styles)
         self.md2docx = Markdown2Docx(rendered_markdown, self.styles)
         self.add_teaching_record()
         self.add_framed_section("课程教学目标及与毕业要求的对应关系")

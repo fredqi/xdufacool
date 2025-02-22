@@ -30,7 +30,7 @@ class MailHelper:
         if isinstance(smtpserver, str):
             self.smtpclient = smtplib.SMTP_SSL(smtpserver)
             # self.smtpclient.set_debuglevel(1)
-            logging.info(f"* Connected to {smtpserver} {self.smtpclient.ehlo()}")
+            # logging.debug(f"* Connected to {smtpserver} {self.smtpclient.ehlo()}")
 
     def login(self, emailuser, password, folder="INBOX"):
         self.imapclient.login(emailuser, password)

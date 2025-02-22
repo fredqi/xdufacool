@@ -11,7 +11,7 @@ A set of toolkit for faculty members in the Xidian University.
 To create an environment for development, you can use the following command:
 
 ```bash
-conda create -n xdufacool-dev python=3.12 pandoc
+conda create -n xdufacool-dev python=3.12 "pandoc<3.2"
 conda activate xdufacool-dev
 ```
 

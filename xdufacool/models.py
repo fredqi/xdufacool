@@ -4,7 +4,6 @@ import logging
 import tempfile
 import jupytext
 import pypandoc
-from tqdm import tqdm
 from pathlib import Path
 from zipfile import ZipFile
 from datetime import datetime
@@ -71,40 +70,50 @@ class StudentGroup:
         self.admin_classes.append(admin_class_name)
 
     def create_summary(self, summary_config):
-        working_dir = Path(summary_config.get('working_dir', '.'))
-        if not working_dir.exists():
-            logging.error(f"Working directory not found: {working_dir}")
-            return
-        composer = SummaryComposer(self.group_id)
+        # working_dir = Path(summary_config.get('working_dir', '.'))
+        # if not working_dir.exists():
+        #     logging.error(f"Working directory not found: {working_dir}")
+        #     return
+        composer = SummaryComposer(self.group_id,
+                                   self.course.base_dir,
+                                   self.course.workspace_dir)
         composer.fill_titlepage(self, summary_config)
         if not self.summary_filepath.exists():
             logging.error(f"Summary file {self.summary_filepath} does not exist.")
             return
+        # logging.debug(f"{working_dir} {summary_config.get('text', 'README.md')}")
+        logging.debug(f"    Summary report: {self.summary_filepath.relative_to(self.course.base_dir)}")
         composer.create_summary(self.summary_filepath,
-                                working_dir / summary_config.get('teaching_record', ""),
-                                working_dir / summary_config.get('score_file', ""),
-                                working_dir / summary_config.get('text', "README.md"))
+                                composer.summary_dir / summary_config.get('teaching_record', ""),
+                                composer.summary_dir / self.score_filename,
+                                composer.summary_dir / summary_config.get('text', "README.md"))
 
 @dataclass
 class Course:
     course_id: str
     abbreviation: str
     topic: str
-    semester: str
-    # teaching_plan: str
-    course_year: int
     start_date: datetime.date
     end_date: datetime.date
     teaching_hours: int
     credits: float
-    # notification_template: str
+    base_dir: Path
     summary: Dict[str, Dict[str, str]] = field(default_factory=dict)
-    # summary_filepath: str
-    # score_filepath: str
-    # submission_dir: str
     teachers: Dict[str, "Teacher"] = field(default_factory=dict)
     groups: List["StudentGroup"] = field(default_factory=list)
     assignments: Dict[str, "Assignment"] = field(default_factory=dict)
+
+    def __post_init__(self):
+        """Initialize course metadata and directory structure after creation"""
+        self.course_year = self.start_date.year
+        self.semester_season = "Spring" if self.start_date.month < 7 else "Fall"
+        if self.semester_season == "Spring":
+            self.semester = f"{self.course_year-1}-{self.course_year}学年第二学期"
+        else:
+            self.semester = f"{self.course_year}-{self.course_year+1}学年第一学期"
+        self.workspace_dir = self.base_dir / f"{self.abbreviation}-{self.course_year}-{self.semester_season}"
+        self.workspace_dir.mkdir(parents=True, exist_ok=True)
+        logging.info(f"* Initialized course workspace for {self.semester}")
 
     def add_assignment(self, assignment):
         self.assignments[assignment.assignment_id] = assignment
@@ -116,25 +125,24 @@ class Course:
         return f"{self.topic} ({self.course_id})"
 
     @staticmethod
-    def from_dict(data):
+    def from_dict(data, base_dir):
         """Creates a Course instance from a dictionary."""
         course_data = data['course']
         teachers = {t['teacher_id']: Teacher(**t) for t in data['teachers']}
         course = Course(
+            base_dir=Path(base_dir),  # Add base directory
             course_id=course_data['course_id'],
             abbreviation=course_data['abbreviation'],
             topic=course_data['topic'],
-            semester=course_data['semester'],
-            course_year=course_data['course_year'],
-            start_date=datetime.strptime(course_data['start_date'], '%Y-%m-%d'),
-            end_date=datetime.strptime(course_data['end_date'], '%Y-%m-%d'),
+            start_date=datetime.strptime(course_data['start_date'], '%Y-%m-%d').date(),
+            end_date=datetime.strptime(course_data['end_date'], '%Y-%m-%d').date(),
             teaching_hours=course_data['teaching_hours'],
             credits=course_data['credits'],
             teachers=teachers,
-            # groups=groups,
-            # assignments=assignments
         )
         course.groups = [StudentGroup(course=course, **g) for g in data['groups']]
+        for group in course.groups:
+            logging.debug(f"Course group: {group}")
         for assignment_data in data['assignments']:
             assignment_type = assignment_data['type']
             if assignment_type == 'coding':
@@ -150,15 +158,15 @@ class Course:
         return course
 
 class Assignment:
-    def __init__(self, assignment_id, course, title, description, due_date, max_score=100):
+    def __init__(self, assignment_id, course, title, alias, description, due_date, max_score=100):
         self.assignment_id = assignment_id
         self.course = course
         self.title = title
+        self.alias = alias
         self.description = description
         self.due_date = due_date
         self.max_score = max_score
         self.submissions = {}
-        self.assignment_folder = None
         self.accepted_extensions = {
             'compressed': ['.zip'],
             'document': ['.pdf']
@@ -168,6 +176,16 @@ class Assignment:
             'document': ['.doc', '.docx']
         }
         self.files_to_convert = []
+        
+        self.dirs = {
+            'exercise': course.base_dir / 'exercise' / self.alias,
+            'dist': course.workspace_dir / 'assignments',
+            'submissions': course.workspace_dir / self.common_name()
+        }
+
+        for dir_key in ('dist', 'submissions'):
+            dir_path = self.dirs[dir_key]
+            dir_path.mkdir(parents=True, exist_ok=True)
 
     def common_name(self):
         """Returns the common name of the assignment, combining course abbreviation and assignment ID."""
@@ -185,7 +203,7 @@ class Assignment:
     def get_submission(self, student_id):
         return self.submissions.get(student_id)
 
-    def generate_notification(self, distribution_dir, notification_template):
+    def generate_notification(self, notification_template):
         """Generates a notification for the assignment using Jinja2 directly.
 
         Args:
@@ -198,8 +216,8 @@ class Assignment:
             'due_date': self.due_date.strftime('%Y-%m-%d'),
             'teachers': format_list(list(self.course.teachers.values())),
         }
-        logging.debug(f"Course context: {self.course} {self.assignment_folder.parent}")
-        env = Environment(loader=FileSystemLoader(self.assignment_folder.parent))
+        logging.debug(f"Course context: {self.course} {self.dirs['exercise'].parent}")
+        env = Environment(loader=FileSystemLoader(self.dirs['exercise'].parent))
         # template_file = self.assignment_folder.parent / notification_template
         # with open(template_file, 'r') as f:
         #     template_source = f.read()
@@ -210,20 +228,20 @@ class Assignment:
         template = env.get_template(notification_template)
         markdown_content = template.render(context)
         try:
-            output_html_path = distribution_dir / f'notification-{self.common_name()}.html'
+            output_html_path = self.dirs['dist'] / f'notification-{self.common_name()}.html'
             pypandoc.convert_text(markdown_content, 'html', format='md', outputfile=str(output_html_path))
             logging.info(f'Generated HTML notification: {output_html_path}')
 
         except Exception as e:
             logging.error(f'Error during notification generation or conversion: {e}')
 
-    def merge_submissions(self, base_dir, output_name=None):
+    def merge_submissions(self, output_name=None):
         """
         Merges all PDF submissions for the assignment into a single PDF file.
         Uses LaTeXConverter for template rendering and PDF generation.
         """
-        base_dir = Path(base_dir) / self.common_name()
         pdf_files = []
+        submissions_dir = self.dirs['submissions']
         for student_id in sorted(self.submissions.keys()):
             submission = self.submissions[student_id]
             if not submission.report_file:
@@ -249,44 +267,76 @@ class Assignment:
                 date=datetime.now().strftime("%Y-%m-%d"),
                 submissions=pdf_files
             )
-            tex_file = base_dir / f"{output_name}.tex"
+            tex_file = submissions_dir / f"{output_name}.tex"
             with open(tex_file, "w") as f:
                 f.write(latex_content)
 
             pdf_compiler = PDFCompiler() 
-            pdf_path = pdf_compiler.compile(tex_file, base_dir, True)
+            pdf_path = pdf_compiler.compile(tex_file, submissions_dir, True)
 
             if not pdf_path:
-                logging.error(f"Failed to merge PDFs for {self.assignment_id}")
+                logging.error(f"! Failed to merge PDFs for {self.assignment_id}")
                 return None
             
         except Exception as e:
-            logging.error(f"Error processing {self.assignment_id}: {e}")
+            logging.error(f"! Error processing {self.assignment_id}: {e}")
             return None
 
 class ReportAssignment(Assignment):
-    def __init__(self, assignment_id, course, title, description, due_date, instructions, max_score=100):
-        super().__init__(assignment_id, course, title, description, due_date, max_score)
+    def __init__(self, assignment_id, course, title, alias, description, due_date, instructions, max_score=100):
+        super().__init__(assignment_id, course, title, alias, description, due_date, max_score)
         self.instructions = instructions
 
     def __repr__(self):
         return f"{type(self).__name__}({vars(self)}) at {hex(id(self))}"
 
+    @staticmethod
+    def from_dict(config_data, course):
+        """Creates a ReportAssignment instance from a dictionary.
+
+        Args:
+            config_data (dict): A dictionary containing the assignment configuration.
+            course (Course): The Course object to which the assignment belongs.
+
+        Returns:
+            ReportAssignment: A ReportAssignment object.
+        """
+        assignment_data = {
+            'assignment_id': config_data['assignment_id'],
+            'course': course,
+            'title': config_data['title'],
+            'alias': config_data['alias'],
+            'description': config_data['description'],
+            'due_date': datetime.strptime(config_data['due_date'], '%Y-%m-%d'),
+            'instructions': config_data.get('instructions', ''),
+            'max_score': config_data.get('max_score', 100)
+        }
+        return ReportAssignment(**assignment_data)
+
 class CodingAssignment(Assignment):
-    def __init__(self, assignment_id, course, title, description, due_date,
-                 environment_template=None, notebook=None, data=None, figures=None, assignment_folder=None):
-        super().__init__(assignment_id, course, title, description, due_date)
+    def __init__(self, assignment_id, course, title, alias, description, due_date,
+                 environment_template=None, notebook=[], data=[], figures=[]):
+        super().__init__(assignment_id, course, title, alias, description, due_date)
+        
+        assignment_folder = self.dirs['exercise']
+        self.environment_template = validate_paths(assignment_folder,
+                                                   environment_template,
+                                                   'Environment template file')[0]
+        self.data = validate_paths(assignment_folder, data, 'Data file')
+        self.figures = validate_paths(assignment_folder, figures, 'Figure file')
+        logging.debug(f"Notebook source files: {notebook}")
+        notebook['source'] = validate_paths(assignment_folder, notebook['source'], 'Notebook source file')[0]
+        self.notebook = notebook
         self.environment_template = environment_template
-        self.notebook = notebook or {}
-        self.data = data or []
-        self.figures = figures or []
-        self.assignment_folder = Path(assignment_folder)
+        self.notebook = notebook
+        self.data = data
+        self.figures = figures
 
     def __repr__(self):
         return f"{type(self).__name__}({vars(self)}) at {hex(id(self))}"
 
-    def prepare(self, output_dir):
-        """Prepares the coding assignment for distribution."""
+    def prepare(self):
+        """Prepares the assignment for distribution."""
         logging.info(f"Preparing assignment {self.assignment_id}...")
 
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -295,27 +345,27 @@ class CodingAssignment(Assignment):
             self.render_environment_file(temp_dir)
             self.convert_py_to_ipynb(temp_dir)
             self.copy_assignment_files(temp_dir)
-            tarball_path = self.package_assignment(output_dir, temp_dir)
+            tarball_path = self.package_assignment(temp_dir)
             logging.info(f"Assignment {self} prepared successfully: {tarball_path}")
             return tarball_path
 
-    def render_environment_file(self, output_dir):
+    def render_environment_file(self, temp_dir):
         """Renders the environment file using Jinja2."""
-        logging.debug(f"{self.assignment_folder}")
-        template = self.assignment_folder / self.environment_template
+        logging.debug(f"{self.dirs['exercise']}")
+        template = self.dirs['exercise'] / self.environment_template
         env = Environment(loader=FileSystemLoader(template.parent))
         template = env.get_template(template.name)
         context = {'course_abbrev': self.course.abbreviation, 'serial_number': self.assignment_id}
         rendered_content = template.render(context)
-        output_file = output_dir / "environment.yml"
+        output_file = temp_dir / "environment.yml"
         with open(output_file, 'w') as f:
             f.write(rendered_content)
         logging.info(f"Rendered environment file to {output_file}")
 
-    def convert_py_to_ipynb(self, output_dir):
+    def convert_py_to_ipynb(self, temp_dir):
         """Convert Python scripts to Jupyter notebooks with additional processing."""
-        source = self.assignment_folder / self.notebook['source']
-        dest = output_dir / self.notebook['output']
+        source = self.dirs['exercise'] / self.notebook['source']
+        dest = temp_dir / self.notebook['output']
         notebook = jupytext.read(source)
         extra_cells = []
         for cell in self.notebook['extra_cells']:
@@ -328,8 +378,7 @@ class CodingAssignment(Assignment):
         jupytext.write(notebook, dest)
         logging.info(f"Converted {source} to {dest}")
             
-
-    def copy_assignment_files(self, output_dir):
+    def copy_assignment_files(self, temp_dir):
         """
         Copy assignment files for a specific assignment.
 
@@ -342,14 +391,9 @@ class CodingAssignment(Assignment):
             FileNotFoundError: If a source file does not exist.
             OSError: If a copy operation fails due to permissions or other issues.
         """
-        if not self.assignment_folder:
-            raise KeyError("Missing 'assignment_folder' in assignment configuration.")
-
-        destination_dir = Path(output_dir)
-
         for item in self.data + self.figures:
-            src = self.assignment_folder / item
-            dest = destination_dir / item
+            src = self.dirs['exercise'] / item
+            dest = temp_dir / item
             if not src.exists():
                 logging.warning(f"Source file does not exist: {src}")
                 continue
@@ -359,10 +403,10 @@ class CodingAssignment(Assignment):
             except OSError as e:
                 logging.error(f"Failed to copy {src} to {dest}: {e}")
 
-    def package_assignment(self, output_dir, temp_dir):
+    def package_assignment(self, temp_dir):
         """Packages the assignment into a tarball for distribution."""
         tarball_name = f"{self.common_name()}-dist.tar.gz"
-        tarball_path = Path(output_dir) / tarball_name
+        tarball_path = self.dirs['dist'] / tarball_name
         with tarfile.open(tarball_path, "w:gz") as tar:
             for item in temp_dir.iterdir():
                 tar.add(item, arcname=f"{self.common_name()}/{item.name}")
@@ -382,38 +426,27 @@ class CodingAssignment(Assignment):
         Raises:
             FileNotFoundError: If a specified folder or file does not exist.
         """
-        assignment_folder = Path(config_data['folder'])
-        if not assignment_folder.exists():
-            raise FileNotFoundError(f"Folder not found: {assignment_folder}")
-
-        environment_template = validate_paths(assignment_folder,
-                                              config_data['environment_template'],
-                                              'Environment template file')[0]
-        data_files = validate_paths(assignment_folder, config_data.get('data', []), 'Data file')
-        figure_files = validate_paths(assignment_folder, config_data.get('figures', []), 'Figure file')
         notebook_config = config_data.get('notebook')
         if not notebook_config:
             raise ValueError("Missing 'notebook' section in configuration.")
-        notebook_config['source'] = validate_paths(assignment_folder,
-                                                   notebook_config['source'],
-                                                   'Notebook source file')[0]
+
         assignment_data = {
             'assignment_id': config_data['assignment_id'],
             'course': course,
             'title': config_data['title'],
+            'alias': config_data['alias'],
             'description': config_data['description'],
             'due_date': datetime.strptime(config_data['due_date'], '%Y-%m-%d'),
-            'environment_template': environment_template,
+            'environment_template': config_data.get('environment_template', 'environment.yml.j2'),
             'notebook': notebook_config,
-            'data': data_files,
-            'figures': figure_files,
-            'assignment_folder': assignment_folder
+            'data': config_data.get('data', []),
+            'figures': config_data.get('figures', []),
         }
         return CodingAssignment(**assignment_data)
 
 class ChallengeAssignment(Assignment):
-    def __init__(self, assignment_id, course, title, description, due_date, evaluation_metric, max_score=100):
-        super().__init__(assignment_id, course, title, description, due_date, max_score)
+    def __init__(self, assignment_id, course, title, alias, description, due_date, evaluation_metric, max_score=100):
+        super().__init__(assignment_id, course, title, alias, description, due_date, max_score)
         self.evaluation_metric = evaluation_metric
         self.leaderboard = []
 
@@ -432,7 +465,9 @@ class Submission:
         self.submission_date = submission_date
         self.score = score
         self.report_file = None  # Initialize to None
-        
+        self.submission_path = None
+        self.report_path = None
+
     def __repr__(self):
         return f"{type(self).__name__}({vars(self)}) at {hex(id(self))}"
 
@@ -443,20 +478,17 @@ class Submission:
         """Returns the formal name of the submission."""
         return f"{self.assignment.common_name()}-{self.student.student_id}-{self.student.name}"
 
-    def add_report(self, submission_dir, report_file):
-        """
-        Adds a report file to the submission if it exists and is a PDF.
-
-        Args:
-            submission_dir (str): The base directory for submissions.
-            report_file (str): The path to the PDF file relative to submission_dir.
-        """
-        pdf_path = Path(submission_dir) / report_file
-        if pdf_path.exists() and pdf_path.suffix.lower() == '.pdf':
-            self.report_file = str(report_file)
-            logging.info(f"Use directly: {report_file}")
+    def add_report(self, report_file):
+        """Adds a report file to the submission"""
+        report_file = Path(report_file)
+        if not report_file.exists():
+            raise FileNotFoundError(f"Report file not found: {report_file}")
+            
+        if report_file.suffix.lower() == '.pdf':
+            self.report_file = report_file.relative_to(self.assignment.dirs['submissions'])
+            logging.info(f"Added report: {self.report_file}")
         else:
-            logging.warning(f"Invalid report file specified: {pdf_path}. Ignoring.")
+            logging.warning(f"! Invalid report file format: {report_file}")
 
 class ReportSubmission(Submission):
     def __init__(self, assignment, student, submission_date, score=0.0):
@@ -472,7 +504,7 @@ class CodingSubmission(Submission):
     def __repr__(self):
         return f"{type(self).__name__}({vars(self)}) at {hex(id(self))}"
 
-    def generate_report(self, compressed_file, base_dir):
+    def generate_report(self, compressed_file):
         """
         Generates or converts the submission to a PDF.
 
@@ -482,12 +514,13 @@ class CodingSubmission(Submission):
         Returns:
             Path: The path to the generated PDF file, or None if an error occurred.
         """
-        if self.report_file and Path(base_dir / self.report_file).exists():
-            return self.report_file
+        if self.report_file:
+            report_filepath = self.assignment.dirs['submissions'] / self.report_file
+            if report_filepath.exists():
+                return report_filepath
 
-        zip_filepath = Path(base_dir) / compressed_file
-        if not zip_filepath.exists():
-            logging.error(f"File not found: {zip_filepath}")
+        if not compressed_file.exists():
+            logging.error(f"! File not found: {compressed_file}")
             return None
 
         common_name = self.assignment.common_name()
@@ -499,7 +532,7 @@ class CodingSubmission(Submission):
                 temp_dir = Path(temp_dir)
                 logging.debug(f"Created temporary directory: {temp_dir}")
 
-                with ZipFile(zip_filepath, 'r') as zip_ref:
+                with ZipFile(compressed_file, 'r') as zip_ref:
                     zip_ref.extractall(temp_dir)
 
                 ipynb_files = list(temp_dir.rglob("*.ipynb"))
@@ -508,40 +541,39 @@ class CodingSubmission(Submission):
                 if ipynb_files:
                     ipynb_file = ipynb_files[0]
                     logging.debug(f"Found IPYNB file for coding assignment: {ipynb_file}")
-                    # Initialize NotebookConverter
                     converter = NotebookConverter()
                     # TODO: Get submission date from email metadata instead of zip file modification time
-                    submission_date = datetime.fromtimestamp(zip_filepath.stat().st_mtime)
+                    submission_date = datetime.fromtimestamp(compressed_file.stat().st_mtime)
                     metadata = {
                         'title': str(self.assignment),
                         'authors': [{"name": f"{self.student}"}],
                         'date': submission_date.strftime("%Y-%m-%d %H:%M")
                     }
                     tex_file = converter.convert_notebook(ipynb_file,
-                                                          self.assignment.assignment_folder,
+                                                          self.assignment.dirs['exercise'],
                                                           self.assignment.figures,
                                                           metadata)
                     if tex_file is None:
-                        logging.error(f"Failed to convert {ipynb_file} to tex")
+                        logging.error(f"! Failed to convert {ipynb_file} to tex")
                         return None
                     # Compile to PDF using PDFCompiler
                     pdf_compiler = PDFCompiler()
                     pdf_file = pdf_compiler.compile(tex_file, tex_file.parent)
                     if pdf_file:
-                        dest_file = zip_filepath.parent / f"{formal_name}.pdf"
+                        dest_file = compressed_file.parent / f"{formal_name}.pdf"
                         shutil.move(pdf_file, dest_file)
-                        self.report_file = dest_file.relative_to(base_dir)
+                        self.add_report(dest_file)
                         logging.debug(f"Generated PDF: {self.report_file}")
                         return self.report_file
                     else:                        
-                        logging.error(f"Failed to compile PDF for {ipynb_file}")
+                        logging.error(f"! Failed to compile PDF for {ipynb_file}")
                         return None
                 else:
-                    logging.warning(f"No IPYNB file found in {zip_filepath}")
+                    logging.warning(f"! No IPYNB file found in {compressed_file}")
                     return None
 
         except Exception as e:
-            logging.error(f"Error processing {zip_filepath}: {str(e)}")
+            logging.error(f"! Error processing {compressed_file}: {str(e)}")
 
 class ChallengeSubmission(Submission):
     def __init__(self, assignment, student, submission_date, model_file, results_file, score=0.0):

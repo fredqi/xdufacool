@@ -9,19 +9,21 @@ from xdufacool.utils import setup_logging, load_config
 from xdufacool.collectors import LocalSubmissionCollector, EmailSubmissionCollector
 
 
-def load_config(config_file, task_name):
+def load_config(config_file, task_name, base_dir):
     """Loads the YAML configuration file, checks its existence, constructs the Course instance,
     and returns the configuration for the specified task.
     """
     config_path = Path(config_file)
     if not config_path.exists():
         logging.error(f"Configuration file not found: {config_file}")
-        return None, None  # Or raise an exception
+        return None, None
 
     with open(config_file, 'r', encoding='utf-8') as f:
-        data = yaml.safe_load(f)  # Use safe_load for security
+        data = yaml.safe_load(f)
 
-    course = Course.from_dict(data)
+    if base_dir is None:
+        base_dir = config_path.parent
+    course = Course.from_dict(data, base_dir)
     logging.info(f"Course created: {course}")
     task_config = data.get('tasks', {}).get(task_name, {})
     logging.debug(f"{task_name} config: {task_config}")
@@ -29,43 +31,33 @@ def load_config(config_file, task_name):
 
 def collect_submissions(args):
     """Handles the 'collect' subcommand."""
-    course, collect_config = load_config(args.config, 'collect')
+    course, _ = load_config(args.config, 'collect', args.base_dir)
     if course is None:
         return
-    
-    local_dir = Path(collect_config.get('local_dir', ''))
-    if not local_dir.exists():
-        logging.error(f"Directory not found: {local_dir}")
-        return
 
-    logging.info(f"Collecting submissions from {local_dir}...")
     assignment_ids = args.assignment_ids if args.assignment_ids else course.assignments.keys()
     
     for assignment_id in assignment_ids:
         assignment = course.assignments.get(assignment_id)
         if assignment is None:
-            logging.error(f"Assignment with ID {assignment_id} not found.")
+            logging.error(f"! Assignment with ID {assignment_id} not found.")
             continue
-        logging.info(f"* Collecting submissions for {assignment}")
-        
         try:
-            collector = LocalSubmissionCollector(assignment, local_dir)
+            logging.info(f"* Collecting submissions for {assignment}")
+            collector = LocalSubmissionCollector(assignment)
             collector.collect_submissions()
             logging.info("* Collection process finished.")
-            
-            assignment.merge_submissions(local_dir)
+            logging.info(f"* Merging submissions for {assignment}")
+            assignment.merge_submissions()
             logging.info("* Merging process finished.")
         except Exception as e:
-            logging.error(f"Error processing {assignment_id}: {e}")
+            logging.error(f"! Error processing {assignment_id}: {e}")
 
 def create_assignment(args):
     """Handles the 'create' subcommand to create an assignment package."""
-    course, create_config = load_config(args.config, 'create')
+    course, create_config = load_config(args.config, 'create', args.base_dir)
     if course is None:
-        return  # load_config will have logged an error
-
-    distribution_dir = Path(create_config.get('distribution_dir', ''))
-    distribution_dir.mkdir(parents=True, exist_ok=True)
+        return
 
     assignment_ids = args.assignment_ids if args.assignment_ids else course.assignments.keys()
     for assignment_id in assignment_ids:
@@ -76,31 +68,31 @@ def create_assignment(args):
 
         logging.info(f"Creating package for {assignment} ...")
         logging.debug(f"Create config: {create_config}")
-        tarball_path = assignment.prepare(distribution_dir)
+        tarball_path = assignment.prepare()
         if tarball_path is None:
             logging.error(f"Failed to create distribution tarball for {assignment}.")
             continue
         notification_template = create_config.get('notification_template', 'notification.md.j2')
-        assignment.generate_notification(distribution_dir, notification_template)
+        assignment.generate_notification(notification_template)
 
 def create_summary(args):
     """Handles the 'summary' subcommand to create teaching summaries."""
-    course, summary_config = load_config(args.config, 'summary')
+    course, summary_config = load_config(args.config, 'summary', args.base_dir)
     if course is None:
-        return  # load_config will have logged an error
+        return
     for student_group in course.groups:
-        logging.info(f"Creating teaching summary for {student_group} ...")
+        logging.info(f"* Creating teaching summary for {student_group} ...")
         student_group.create_summary(summary_config)
-    logging.info(f"Teaching summaries created.")
+    logging.info(f"* Teaching summaries created.")
 
 def check_submissions(args):
     """Handles the 'check' subcommand to process email submissions."""
-    course, check_config = load_config(args.config, 'check')
+    course, check_config = load_config(args.config, 'check', args.base_dir)
     if course is None:
         return
     try:
         for assignment_id, assignment in course.assignments.items():
-            logging.info(f"* Processing {assignment}")
+            logging.info(f"* Processing {assignment} ({assignment_id})")
             collector = EmailSubmissionCollector(assignment, check_config)
             collector.collect_submissions()
             collector.send_confirmations()
@@ -117,6 +109,7 @@ def main():
     parser = argparse.ArgumentParser(description="Manage assignments and submissions.")
     parent_parser = argparse.ArgumentParser(add_help=False)
     parent_parser.add_argument("-c", "--config", default="config.yml", help="Config file path")
+    parent_parser.add_argument("-b", "--base-dir", default=None, help="Base directory")
     subparsers = parser.add_subparsers(title="subcommands", dest="subcommand", required=True)
 
     create_parser = subparsers.add_parser("create", parents=[parent_parser],
@@ -144,7 +137,7 @@ def main():
     check_parser.set_defaults(func=check_submissions)
 
     args = parser.parse_args()
-    setup_logging('xdufacool.log', logging.DEBUG)
+    setup_logging('xdufacool.log', logging.INFO)
     logging.info("Starting xdufacool ...")
     logging.debug(f"Args: {args}")
     args.func(args)

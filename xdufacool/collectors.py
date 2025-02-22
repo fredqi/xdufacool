@@ -14,7 +14,6 @@ from .homework_manager import parse_subject
 from .mail_helper import MailHelper
 from .models import (
     Student, 
-    Submission, 
     CodingSubmission, 
     ReportSubmission, 
     ChallengeSubmission,
@@ -37,25 +36,21 @@ class SubmissionCollector(ABC):
 class LocalSubmissionCollector(SubmissionCollector):
     """Collects submissions from local filesystem."""
     
-    def __init__(self, assignment, base_dir):
+    def __init__(self, assignment):
         super().__init__(assignment)
-        self.base_dir = Path(base_dir)
-        if not self.base_dir.exists():
-            raise ValueError(f"Directory not found: {self.base_dir}")
+        self.submission_dir = assignment.dirs['submissions']
+        logging.info(f"* Collecting submissions from {self.submission_dir} ...")
+        
+        if not self.submission_dir.exists():
+            logging.error(f"! Directory {self.submission_dir} does not exist.")
+            return None
         
     def collect_submissions(self):
-        submission_dir = self.base_dir / self.assignment.common_name()
-        logging.info(f"Collecting submissions from {submission_dir} ...")
-        
-        if not submission_dir.exists():
-            logging.error(f"Error: Directory {submission_dir} does not exist.")
-            return None
-            
-        file_paths = list(submission_dir.rglob(f"{self.assignment.common_name()}*"))
+        file_paths = list(self.submission_dir.rglob(f"{self.assignment.common_name()}*"))
         file_paths.sort(key=lambda x: (x.suffix.lower() != '.pdf', x))
         
-        for file_path in file_paths:
-            relative_path = file_path.relative_to(submission_dir)
+        for file_path in tqdm(file_paths, desc="Collecting submissions"):
+            # relative_path = file_path.relative_to(self.submission_dir)
             if not file_path.is_file():
                 continue
                 
@@ -67,7 +62,7 @@ class LocalSubmissionCollector(SubmissionCollector):
                 self.assignment.add_submission(submission)
             
             submission = self.assignment.submissions[student_id]
-            self._process_submission_file(submission, file_path, relative_path, submission_dir)
+            self._process_submission_file(submission, file_path)
     
     def _create_submission(self, student, submission_date):
         """Create appropriate submission instance based on assignment type."""
@@ -81,20 +76,20 @@ class LocalSubmissionCollector(SubmissionCollector):
             logging.error(f"Unknown assignment type: {type(self.assignment)}")
             return None
 
-    def _process_submission_file(self, submission, file_path, relative_path, submission_dir):
+    def _process_submission_file(self, submission, file_path):
         """Process a submission file based on its extension."""
         file_ext = file_path.suffix.lower()
-        
+        relative_path = file_path.relative_to(self.submission_dir)
         if file_ext in self.assignment.accepted_extensions['compressed']:
-            submission.generate_report(relative_path, submission_dir)
+            submission.generate_report(file_path)
         elif file_ext in self.assignment.accepted_extensions['document']:
-            submission.add_report(submission_dir, relative_path)
+            submission.add_report(file_path)
         elif file_ext in self.assignment.alternative_extensions['document']:
-            logging.warning(f"To convert: {relative_path}")
+            logging.warning(f"! To convert: {relative_path}")
         elif file_ext in self.assignment.alternative_extensions['compressed']:
-            logging.warning(f"To decompress manually: {relative_path}")
+            logging.warning(f"! To decompress manually: {relative_path}")
         else:
-            logging.warning(f"Ignore: {relative_path}")
+            logging.warning(f"! Ignore: {relative_path}")
 
 class EmailSubmissionCollector(SubmissionCollector):
     """Collects submissions from email."""
@@ -103,21 +98,16 @@ class EmailSubmissionCollector(SubmissionCollector):
         """Initialize collector with assignment and config dictionary."""
         super().__init__(assignment)
         self.config = config
-        self.local_dir = Path(config.get('local_dir', '.')) / self.assignment.common_name()
-        self.local_dir.mkdir(parents=True, exist_ok=True)
         self.email_histories = {}  # student_id -> EmailSubmissionHistory
         
-        # Get teacher info from first teacher in course
         teacher = list(assignment.course.teachers.values())[0]
         self.teacher_name = teacher.name
         
         self.teacher_email = config.get('email', '')
         self.email_template = config.get('email_template', '')
         self.mail_label = config.get('mail_label', '"[Gmail]/All Mail"')
-        self.batch_mode = config.get('batch', False)
-
+        self.batch_mode = config.get('batch_mode', 'none')
         self.mail_helper = None
-
         self.testing_addr = None
         if config.get('testing', False):
             self.testing_addr = config.get('testing_addr', 'fred.qi@gmail.com')
@@ -127,8 +117,7 @@ class EmailSubmissionCollector(SubmissionCollector):
         """Establish connection to mail server."""
         if self.mail_helper:
             return
-            
-        # Setup proxy if configured
+
         proxy = self.config.get('proxy', None)
         if proxy:
             proxy = proxy.split(':')
@@ -165,13 +154,20 @@ class EmailSubmissionCollector(SubmissionCollector):
         student_ids = list(self.email_histories.keys())
         if self.testing_addr and len(student_ids) > 5:
             student_ids = random.sample(student_ids, 5)
-            logging.info(f"* Testing mode: Processing only {len(student_ids)} submissions")
+            logging.debug(f"* Processing only {len(student_ids)} submissions (Testing mode)")
+        else:
+            logging.info(f"* Processing {len(student_ids)} submissions")
         
-        # Download attachments only from latest submissions
-        for student_id in tqdm(student_ids, desc="* Saving attachments"):
+        # Download attachments based on batch mode
+        for student_id in tqdm(student_ids, desc="Saving attachments"):
             history = self.email_histories[student_id]
-            if history.latest_email_uid:
-                self._save_attachments(history.latest_email_uid, student_id, history)
+            if self.batch_mode == "all":
+                for email_uid in history.email_uids:
+                    self._save_attachments(email_uid, student_id, history)
+            else:
+                if history.latest_email_uid:
+                    self._save_attachments(history.latest_email_uid, student_id, history)
+                    
         self.disconnect()
         return self.assignment.submissions
     
@@ -215,7 +211,7 @@ class EmailSubmissionCollector(SubmissionCollector):
             conditions.append(f'SINCE "{imap_date}"')
             
         # In non-batch mode, only check unseen emails
-        if not self.batch_mode:
+        if self.batch_mode == 'none':
             conditions.append('UNSEEN')
             
         search_condition = '(' + ' '.join(conditions) + ')'
@@ -239,27 +235,34 @@ class EmailSubmissionCollector(SubmissionCollector):
         body, attachments = self.mail_helper.fetch_email(email_uid)
         
         for filename, data in attachments:
-            # Calculate checksum and track it
             sha256 = history.add_attachment(filename, data)
-            file_path = self.local_dir / student_id / filename
-            file_path.parent.mkdir(parents=True, exist_ok=True)
+            student_dir = self.assignment.dirs['submissions'] / student_id
+            student_dir.mkdir(parents=True, exist_ok=True)
+            
+            file_path = student_dir / filename
             logging.info(f"  + Saving {filename} for {student_id} ({email_uid})")
             with open(file_path, 'wb') as f:
                 f.write(data)
                 
     def send_confirmations(self):
         """Send confirmation emails for unconfirmed submissions."""
+        if self.batch_mode != 'none':
+            logging.info(f"* Confirmation emails are skipped in '{self.batch_mode}' batch mode.")
+            return
+
         student_ids = list(self.email_histories.keys())
         
         if self.testing_addr and len(student_ids) > 5:
             student_ids = random.sample(student_ids, 5)
-            logging.info(f"* Testing mode: Sending confirmations for {len(student_ids)} submissions")
+            logging.debug(f"* Sending confirmations for {len(student_ids)} submissions (Testing mode)")
+        else:
+            logging.info(f"* Sending confirmations for {len(student_ids)} submissions")
             
         self.connect(connect_smtp=True)
         for student_id in tqdm(student_ids, desc="Sending confirmations"):
             history = self.email_histories[student_id]
             if not history.is_confirmed() or self.testing_addr:
-                logging.debug(f"  - Creating confirmation for {student_id}")
+                logging.debug(f"  - Creating confirmation for {student_id} ({history.latest_email_uid})")
                 to_addr, msg = history.create_confirmation_email(
                     self.teacher_name, 
                     self.teacher_email,
@@ -267,7 +270,7 @@ class EmailSubmissionCollector(SubmissionCollector):
                 )
                 
                 if msg:
-                    logging.debug(f"  - Sending confirmation to {to_addr}")
+                    logging.debug(f"    Sending confirmation to {to_addr}")
                     self.mail_helper.send_email(self.teacher_email, to_addr, msg)
                     self.mail_helper.flag(history.latest_email_uid, ['Seen'])
         self.disconnect()
