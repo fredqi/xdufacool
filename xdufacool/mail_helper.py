@@ -124,9 +124,14 @@ class MailHelper:
                     encfmt = part.get_param('charset')
                     # if 'UTF-8' != encfmt:
                     # text = unicode(text, encfmt).encode('utf-8')
-                    if encfmt.upper() in ['GB2312', 'GBK']:
+                    if encfmt and encfmt.upper() in ['GB2312', 'GBK']:
                         encfmt = 'GB18030'
-                    text = text.decode(encfmt)
+                    if encfmt:
+                        text = text.decode(encfmt)
+                    else:
+                        # Handle the case where charset is not specified.
+                        #  Could use a default encoding (like UTF-8), or try to guess.
+                        text = text.decode('utf-8', errors='replace')  # Default to UTF-8 and replace errors
                     body += '\n' + text
 
                 if c_disp is None:

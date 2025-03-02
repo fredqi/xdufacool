@@ -44,6 +44,8 @@ class PDFCompiler:
             
             basename = Path(tex_file).stem
             success = True
+            logging.debug(f"Current working directory: {original_cwd}=>{output_dir}")
+            logging.debug(f"Compiling {basename} with {self.compiler}")
 
             # Compile multiple times for TOC/references
             for i in range(self.max_runs):
@@ -198,6 +200,7 @@ class NotebookConverter:
                 if hasattr(notebook_content, 'metadata'):
                     notebook_content.metadata.update(metadata)
                 self._truncate_long_outputs(notebook_content)
+                self._patch_math_split(notebook_content)
                 body, resources = self.exporter.from_notebook_node(notebook_content)
             if assignment_folder and figures:
                 self._copy_missing_figures(assignment_folder, output_dir, figures)
@@ -261,6 +264,21 @@ class NotebookConverter:
                             output.data['text/plain'] = truncate_text(output.data['text/plain'])
                     elif output.output_type == 'error':
                         pass
+
+    def _patch_math_split(self, nb):
+        """
+        Patches 'split' environments in Markdown cells to be enclosed in display math mode.
+
+        This function iterates through all Markdown cells in the notebook and replaces
+        '\\begin{split}' with '$$\\begin{split}' and '\\end{split}' with '\\end{split}$$'.
+
+        Args:
+            nb (nbformat.NotebookNode): The notebook object.
+        """
+        for cell in nb.cells:
+            if cell.cell_type == 'markdown':
+                cell.source = cell.source.replace(r'\begin{split}', r'$$\begin{split}')
+                cell.source = cell.source.replace(r'\end{split}', r'\end{split}$$')
 
 def docx_to_pdf(docx_filepath, pdf_filepath):
     """Converts a DOCX file to PDF."""

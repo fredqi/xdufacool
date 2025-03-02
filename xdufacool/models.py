@@ -216,8 +216,9 @@ class Assignment:
             'due_date': self.due_date.strftime('%Y-%m-%d'),
             'teachers': format_list(list(self.course.teachers.values())),
         }
-        logging.debug(f"Course context: {self.course} {self.dirs['exercise'].parent}")
-        env = Environment(loader=FileSystemLoader(self.dirs['exercise'].parent))
+        template_dir = self.course.base_dir / 'templates'   
+        logging.debug(f"Course context: {self.course} {template_dir}")
+        env = Environment(loader=FileSystemLoader(template_dir))
         # template_file = self.assignment_folder.parent / notification_template
         # with open(template_file, 'r') as f:
         #     template_source = f.read()

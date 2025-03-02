@@ -81,7 +81,10 @@ class LocalSubmissionCollector(SubmissionCollector):
         file_ext = file_path.suffix.lower()
         relative_path = file_path.relative_to(self.submission_dir)
         if file_ext in self.assignment.accepted_extensions['compressed']:
-            submission.generate_report(file_path)
+            if hasattr(submission, 'generate_report'):
+                submission.generate_report(file_path)
+            else:
+                submission.add_report(file_path)
         elif file_ext in self.assignment.accepted_extensions['document']:
             submission.add_report(file_path)
         elif file_ext in self.assignment.alternative_extensions['document']:
