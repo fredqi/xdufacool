@@ -92,7 +92,7 @@ def check_submissions(args):
         return
     try:
         for assignment_id, assignment in course.assignments.items():
-            logging.info(f"* Processing {assignment} ({assignment_id})")
+            logging.info(f"* Processing {assignment}...")
             collector = EmailSubmissionCollector(assignment, check_config)
             collector.collect_submissions()
             collector.send_confirmations()

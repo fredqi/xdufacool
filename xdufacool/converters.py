@@ -119,7 +119,7 @@ class LaTeXConverter:
             trim_blocks=True,
             autoescape=False,
         )
-        self.compiler = PDFCompiler()
+        self.compiler = PDFCompiler('lualatex')
 
     def render_template(self, template_name, **context):
         """
@@ -132,6 +132,9 @@ class LaTeXConverter:
         Returns:
             str: Rendered LaTeX content
         """
+        if 'language' not in context:
+            context['language'] = 'zh'
+            
         template = self.template_env.get_template(template_name)
         return template.render(**context)
 
@@ -156,6 +159,47 @@ class LaTeXConverter:
             f.write(tex_content)
 
         return self.compiler.compile(tex_file, output_dir, clean_up)
+
+class EmailTemplateRenderer:
+    """
+    Renders email templates using Jinja2.
+    """
+    
+    def __init__(self, template_dir=None):
+        """
+        Initialize email template renderer.
+        
+        Args:
+            template_dir (str, optional): Directory containing templates.
+                                         If None, uses default templates directory.
+        """
+        if template_dir is None:
+            template_dir = os.path.join(os.path.dirname(__file__), 'templates')
+            
+        self.template_loader = jinja2.FileSystemLoader(searchpath=template_dir)
+        self.template_env = jinja2.Environment(
+            loader=self.template_loader,
+            trim_blocks=True,
+            lstrip_blocks=True,
+            autoescape=False,
+        )
+    
+    def render_template(self, template_name, **context):
+        """
+        Render an email template with given context.
+        
+        Args:
+            template_name (str): Name of the template file
+            **context: Template variables
+            
+        Returns:
+            str: Rendered email content
+        """
+        if 'language' not in context:
+            context['language'] = 'zh'
+            
+        template = self.template_env.get_template(template_name)
+        return template.render(**context)
 
 class NotebookConverter:
     """

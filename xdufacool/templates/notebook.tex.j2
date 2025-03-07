@@ -7,7 +7,7 @@
 ((* extends cell_style *))
 
 ((* block docclass *))
-\documentclass[10pt]{article}
+\documentclass[10pt,fontset=none]{ctexart}
 ((* endblock docclass *))
 
 ((* block packages *))
@@ -15,7 +15,9 @@
 ((( super() )))
 
 % Add your custom LaTeX packages and settings here
-\usepackage{xeCJK}
+\setmainfont{Noto Serif}
+\setsansfont{Noto Sans}
+\setmonofont{Noto Sans Mono}
 \setCJKmainfont{Noto Serif CJK SC}
 \setCJKsansfont{Noto Sans CJK SC}
 \setCJKmonofont{Noto Sans Mono CJK SC}

@@ -10,6 +10,7 @@ from email.utils import formataddr
 from abc import ABC, abstractmethod
 from tqdm import tqdm
 
+from .utils import format_list
 from .homework_manager import parse_subject
 from .mail_helper import MailHelper
 from .models import (
@@ -21,6 +22,8 @@ from .models import (
     ReportAssignment, 
     ChallengeAssignment
 )
+from .converters import EmailTemplateRenderer
+
 
 class SubmissionCollector(ABC):
     """Abstract base class for submission collectors."""
@@ -103,8 +106,11 @@ class EmailSubmissionCollector(SubmissionCollector):
         self.config = config
         self.email_histories = {}  # student_id -> EmailSubmissionHistory
         
-        teacher = list(assignment.course.teachers.values())[0]
-        self.teacher_name = teacher.name
+        teachers = list(assignment.course.teachers.values())
+        if assignment.course.language == 'zh':
+            self.teacher_name = format_list(teachers, conj="、")
+        else:
+            self.teacher_name = format_list(teachers, conj="and")
         
         self.teacher_email = config.get('email', '')
         self.email_template = config.get('email_template', '')
@@ -150,8 +156,9 @@ class EmailSubmissionCollector(SubmissionCollector):
         email_uids = self.mail_helper.search(conditions)        
         logging.debug(f"* Found {len(email_uids)} emails to check")
         
-        # Process all headers to build submission histories
-        for email_uid in tqdm(email_uids, desc="Processing email headers"):
+        assignment_code = self.assignment.common_name()
+        description = f"[{assignment_code}] Checking submissions"
+        for email_uid in tqdm(email_uids, desc=description):
             self._process_email_header(email_uid)
     
         student_ids = list(self.email_histories.keys())
@@ -161,8 +168,8 @@ class EmailSubmissionCollector(SubmissionCollector):
         else:
             logging.info(f"* Processing {len(student_ids)} submissions")
         
-        # Download attachments based on batch mode
-        for student_id in tqdm(student_ids, desc="Saving attachments"):
+        description = f"[{assignment_code}] Saving attachments"
+        for student_id in tqdm(student_ids, desc=description):
             history = self.email_histories[student_id]
             if self.batch_mode == "all":
                 for email_uid in history.email_uids:
@@ -260,9 +267,11 @@ class EmailSubmissionCollector(SubmissionCollector):
             logging.debug(f"* Sending confirmations for {len(student_ids)} submissions (Testing mode)")
         else:
             logging.info(f"* Sending confirmations for {len(student_ids)} submissions")
-            
+        
+        assignment_code = self.assignment.common_name()
+        description = f"[{assignment_code}] Sending confirmations"
         self.connect(connect_smtp=True)
-        for student_id in tqdm(student_ids, desc="Sending confirmations"):
+        for student_id in tqdm(student_ids, desc=description):
             history = self.email_histories[student_id]
             if not history.is_confirmed() or self.testing_addr:
                 logging.debug(f"  - Creating confirmation for {student_id} ({history.latest_email_uid})")
@@ -280,12 +289,9 @@ class EmailSubmissionCollector(SubmissionCollector):
 
 class EmailSubmissionHistory:
     """Tracks email submission history and handles confirmation emails."""
-    
-    # File extension sets
-    EXTS_DOCS = {'.pdf', '.doc', '.docx'}
-    EXTS_SOURCES = {'.py', '.ipynb', '.m', '.mat'}
+
     testing_addr = None
-    
+   
     def __init__(self, submission):
         self.submission = submission
         self.latest_email_uid = None
@@ -336,17 +342,30 @@ class EmailSubmissionHistory:
         return (self.latest_header and 
                 self.latest_header.get('message-id') in self.replied_message_ids)
                 
-    def create_confirmation_email(self, teacher_name, teacher_email, template):
-        """Create confirmation email for latest submission."""
+    def create_confirmation_email(self, teacher_name, teacher_email,
+                                  template_name='email_confirm.txt.j2'):
+        """Create confirmation email for latest submission.
+        
+        Args:
+            teacher_name (str): Name of the teacher sending the confirmation
+            teacher_email (str): Email address of the teacher
+            
+        Returns:
+            tuple: (email message object, recipient address) or (None, None) if no submission
+        """
+        
         if not self.latest_header:
             return None, None
             
         data = {
             'name': self.submission.student.name,
             'fromname': self.latest_header.get('from', ''),
-            'message-id': self.latest_header['message-id'],
+            'message_id': self.latest_header['message-id'],
             'checksum': '\n'.join(f'{sha} {fn}' 
-                                 for sha, fn in self.file_checksums.items())
+                                 for sha, fn in self.file_checksums.items()),
+            'course_name': self.submission.assignment.course.topic,
+            'teacher_name': teacher_name,
+            'language': self.submission.assignment.course.language,
         }
 
         msg = MIMEMultipart()
@@ -361,24 +380,27 @@ class EmailSubmissionHistory:
         msg['To'] = formataddr((data['name'], to_addr))
         msg['In-Reply-To'] = self.latest_header['message-id']
         msg['Subject'] = Header(self.latest_header['subject'], 'utf-8')
-
-        
-        # Check submitted file types
+       
         exts = {Path(fn).suffix.lower() for fn in self.file_checksums.values()}
-        has_doc = bool(exts & self.EXTS_DOCS)
-        has_source = bool(exts & self.EXTS_SOURCES)
+        expected_exts = self.submission.assignment.get_extensions()
+        has_doc = bool(exts & expected_exts)
         
-        # Add comments about missing files
-        data['comment'] = '\n'
         if not has_doc:
-            data['comment'] += "\n！ 缺少作业附件。\n"
-        # if not has_source and self.submission.assignment.requires_source:
-        #     data['comment'] += "\n！ 缺少源代码文件。\n"
+            if data['language'] == 'zh':
+                data['comment'] += f"\n！ 缺少{expected_exts}格式的作业附件。\n"
+            else:
+                data['comment'] += f"\n! Missing attachments with extensions: {expected_exts}.\n"
             
-        if hasattr(self.submission, 'score'):
-            data['accuracy'] = f"您此次提交的结果正确率为{self.submission.score*100:5.2f}%。"
-            
-        body = template.format(**data)
+        if hasattr(self.submission, 'leaderboard'):
+            score_percentage = self.submission.score * 100
+            if  data['language'] == 'zh':
+                data['accuracy'] = f"您此次提交的结果正确率为{score_percentage:5.2f}%。"
+            else:
+                data['accuracy'] = f"The accuracy of your submission is {score_percentage:5.2f}%."
+        
+        base_dir = self.submission.assignment.course.base_dir
+        template_renderer = EmailTemplateRenderer(base_dir/'templates')
+        body = template_renderer.render_template(template_name, **data)
         msg.attach(MIMEText(body, 'plain', 'utf-8'))
         
         return to_addr, msg

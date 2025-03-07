@@ -98,6 +98,7 @@ class Course:
     teaching_hours: int
     credits: float
     base_dir: Path
+    language: str = "zh"
     summary: Dict[str, Dict[str, str]] = field(default_factory=dict)
     teachers: Dict[str, "Teacher"] = field(default_factory=dict)
     groups: List["StudentGroup"] = field(default_factory=list)
@@ -200,6 +201,10 @@ class Assignment:
     def __str__(self):
         return f"{self.title} ({self.assignment_id})"
 
+    def get_extensions(self):
+        exts = self.accepted_extensions['compressed'] + self.alternative_extensions['compressed']
+        return set(exts)
+
     def get_submission(self, student_id):
         return self.submissions.get(student_id)
 
@@ -266,7 +271,8 @@ class Assignment:
                 course_id=self.course.course_id,
                 assignment_id=self.assignment_id,
                 date=datetime.now().strftime("%Y-%m-%d"),
-                submissions=pdf_files
+                submissions=pdf_files,
+                language=self.course.language
             )
             tex_file = submissions_dir / f"{output_name}.tex"
             with open(tex_file, "w") as f:
@@ -290,6 +296,10 @@ class ReportAssignment(Assignment):
 
     def __repr__(self):
         return f"{type(self).__name__}({vars(self)}) at {hex(id(self))}"
+    
+    def get_extensions(self):
+        exts = self.accepted_extensions['document'] + self.alternative_extensions['document']
+        return set(exts)
 
     @staticmethod
     def from_dict(config_data, course):
