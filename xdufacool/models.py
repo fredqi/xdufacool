@@ -214,15 +214,20 @@ class Assignment:
         Args:
             output_dir (str): The directory to store the notification.
         """
+        template_dir = self.course.base_dir / 'templates'   
+        logging.debug(f"Course context: {self.course} {self.course.base_dir}")
+        teachers_desc = format_list(list(self.course.teachers.values()),
+                                    conj="、", lang=self.course.language)
         context = {
             'task_id': self.common_name(),
             'task_topic': self.title,
             'task_description': self.description,
             'due_date': self.due_date.strftime('%Y-%m-%d'),
-            'teachers': format_list(list(self.course.teachers.values())),
+            'teachers': teachers_desc,
+            'language': self.course.language,
+            'assignment_type': self.__class__.__name__
         }
-        template_dir = self.course.base_dir / 'templates'   
-        logging.debug(f"Course context: {self.course} {template_dir}")
+        logging.debug(f"Assignment context: {context}")
         env = Environment(loader=FileSystemLoader(template_dir))
         # template_file = self.assignment_folder.parent / notification_template
         # with open(template_file, 'r') as f:
@@ -236,7 +241,8 @@ class Assignment:
         try:
             output_html_path = self.dirs['dist'] / f'notification-{self.common_name()}.html'
             pypandoc.convert_text(markdown_content, 'html', format='md', outputfile=str(output_html_path))
-            logging.info(f'Generated HTML notification: {output_html_path}')
+            notification_relative = output_html_path.relative_to(self.course.base_dir)
+            logging.info(f'* Generated notification: {notification_relative}')
 
         except Exception as e:
             logging.error(f'Error during notification generation or conversion: {e}')
@@ -289,10 +295,40 @@ class Assignment:
             logging.error(f"! Error processing {self.assignment_id}: {e}")
             return None
 
+    def _copy_assignment_files(self, temp_dir):
+        """
+        Copy assignment files for a specific assignment.
+
+        Args:
+            assignment_id (str): The destination directory for the specific assignment.
+            output_dir (str): The base output directory.
+
+        Raises:
+            KeyError: If 'folder_path' or 'direct_copy' keys are missing in the assignment config.
+            FileNotFoundError: If a source file does not exist.
+            OSError: If a copy operation fails due to permissions or other issues.
+        """
+        items = []
+        for attr in ('data', 'figures'):
+            items += getattr(self, attr, [])
+        for item in items:
+            src = self.dirs['exercise'] / item
+            dest = temp_dir / item
+            if not src.exists():
+                logging.warning(f"Source file does not exist: {src}")
+                continue
+            try:
+                shutil.copy2(src, dest)
+                src_relative = src.relative_to(self.course.base_dir)
+                logging.info(f"  Copied {src_relative} to {dest}")
+            except OSError as e:
+                logging.error(f"! Failed to copy {src} to {dest}: {e}")
+
 class ReportAssignment(Assignment):
-    def __init__(self, assignment_id, course, title, alias, description, due_date, instructions, max_score=100):
+    def __init__(self, assignment_id, course, title, alias, description, due_date, instructions, figures=[], max_score=100):
         super().__init__(assignment_id, course, title, alias, description, due_date, max_score)
         self.instructions = instructions
+        self.figures = figures
 
     def __repr__(self):
         return f"{type(self).__name__}({vars(self)}) at {hex(id(self))}"
@@ -300,6 +336,51 @@ class ReportAssignment(Assignment):
     def get_extensions(self):
         exts = self.accepted_extensions['document'] + self.alternative_extensions['document']
         return set(exts)
+    
+    def prepare(self):
+        """Prepares the assignment for distribution by generating a PDF file.
+        
+        Uses the LaTeXConverter to generate a PDF file from the article.tex.j2 template,
+        with content loaded from the instructions file.
+        
+        Returns:
+            str: Path to the generated PDF file or None if generation failed
+        """
+        converter = LaTeXConverter()
+        instructions_path = self.dirs['exercise'] / self.instructions
+        try:
+            if instructions_path.exists():
+                with open(instructions_path, 'r', encoding='utf-8') as f:
+                    content = f.read()
+            else:
+                content = self.instructions  # Use the instructions string itself if file not found
+        except Exception as e:
+            logging.error(f"Error loading instructions file: {e}")
+        
+        due_date_desc = "作业提交截止时间：" + self.due_date.strftime('%Y年%m月%d日') + " 23:59:59。"
+        context = {
+            'title': f"{self.course.topic}作业:{self.title}",
+            'author': f"作业编号：{self.common_name()}",
+            'date': datetime.now().strftime("%Y-%m-%d"),
+            'content': content,
+            'abstract_name': "作业说明",
+            'abstract': "\\\\ ".join([self.description, due_date_desc]),
+            'toc': False,
+            'bibliography': None,
+            'language': self.course.language
+        }
+        with tempfile.TemporaryDirectory(prefix=f"{self.course.course_id}-") as temp_dir:
+            temp_dir = Path(temp_dir)
+            logging.debug(f"  Created temporary directory: {temp_dir}")
+            dist_filename = f"{self.common_name()}-dist"
+            rendered_tex = converter.render_template('article.tex.j2', **context)
+            self._copy_assignment_files(temp_dir)
+            pdf_temp = converter.compile_pdf(rendered_tex, temp_dir, dist_filename)
+            pdf_path = self.dirs['dist'] / f"{dist_filename}.pdf"
+            shutil.copy2(pdf_temp, pdf_path)
+            pdf_relative = pdf_path.relative_to(self.course.base_dir)
+            logging.info(f"* Assignment {self} prepared successfully: {pdf_relative}")
+            return pdf_path
 
     @staticmethod
     def from_dict(config_data, course):
@@ -320,6 +401,7 @@ class ReportAssignment(Assignment):
             'description': config_data['description'],
             'due_date': datetime.strptime(config_data['due_date'], '%Y-%m-%d'),
             'instructions': config_data.get('instructions', ''),
+            'figures': config_data.get('figures', []),
             'max_score': config_data.get('max_score', 100)
         }
         return ReportAssignment(**assignment_data)
@@ -348,21 +430,22 @@ class CodingAssignment(Assignment):
 
     def prepare(self):
         """Prepares the assignment for distribution."""
-        logging.info(f"Preparing assignment {self.assignment_id}...")
-
+        # logging.info(f"  Preparing assignment {self.assignment_id}...")
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_dir = Path(temp_dir)
-            logging.debug(f"Created temporary directory: {temp_dir}")
+            logging.debug(f"  Created temporary directory: {temp_dir}")
             self.render_environment_file(temp_dir)
             self.convert_py_to_ipynb(temp_dir)
-            self.copy_assignment_files(temp_dir)
+            self._copy_assignment_files(temp_dir)
             tarball_path = self.package_assignment(temp_dir)
-            logging.info(f"Assignment {self} prepared successfully: {tarball_path}")
+            tarball_relative = tarball_path.relative_to(self.course.base_dir)
+            logging.info(f"* Assignment {self} prepared successfully: {tarball_relative}")
             return tarball_path
 
     def render_environment_file(self, temp_dir):
         """Renders the environment file using Jinja2."""
-        logging.debug(f"{self.dirs['exercise']}")
+        exercise_dir_relative = self.dirs['exercise'].relative_to(self.course.base_dir)
+        logging.debug(f"  Exercise folder: {exercise_dir_relative}")
         template = self.dirs['exercise'] / self.environment_template
         env = Environment(loader=FileSystemLoader(template.parent))
         template = env.get_template(template.name)
@@ -371,7 +454,7 @@ class CodingAssignment(Assignment):
         output_file = temp_dir / "environment.yml"
         with open(output_file, 'w') as f:
             f.write(rendered_content)
-        logging.info(f"Rendered environment file to {output_file}")
+        logging.info(f"  Rendered environment file to {output_file}")
 
     def convert_py_to_ipynb(self, temp_dir):
         """Convert Python scripts to Jupyter notebooks with additional processing."""
@@ -387,33 +470,9 @@ class CodingAssignment(Assignment):
         notebook.cells = extra_cells + notebook.cells
         notebook.metadata['jupytext'] = {'formats': 'ipynb'}
         jupytext.write(notebook, dest)
-        logging.info(f"Converted {source} to {dest}")
+        source_relative = source.relative_to(self.course.base_dir)
+        logging.info(f"  Converted {source_relative} to {dest}")
             
-    def copy_assignment_files(self, temp_dir):
-        """
-        Copy assignment files for a specific assignment.
-
-        Args:
-            assignment_id (str): The destination directory for the specific assignment.
-            output_dir (str): The base output directory.
-
-        Raises:
-            KeyError: If 'folder_path' or 'direct_copy' keys are missing in the assignment config.
-            FileNotFoundError: If a source file does not exist.
-            OSError: If a copy operation fails due to permissions or other issues.
-        """
-        for item in self.data + self.figures:
-            src = self.dirs['exercise'] / item
-            dest = temp_dir / item
-            if not src.exists():
-                logging.warning(f"Source file does not exist: {src}")
-                continue
-            try:
-                shutil.copy2(src, dest)
-                logging.info(f"Copied {src} to {dest}")
-            except OSError as e:
-                logging.error(f"Failed to copy {src} to {dest}: {e}")
-
     def package_assignment(self, temp_dir):
         """Packages the assignment into a tarball for distribution."""
         tarball_name = f"{self.common_name()}-dist.tar.gz"
@@ -541,17 +600,17 @@ class CodingSubmission(Submission):
             # Create a temporary directory
             with tempfile.TemporaryDirectory(prefix=f"{common_name}-") as temp_dir:
                 temp_dir = Path(temp_dir)
-                logging.debug(f"Created temporary directory: {temp_dir}")
+                logging.debug(f"  Created temporary directory: {temp_dir}")
 
                 with ZipFile(compressed_file, 'r') as zip_ref:
                     zip_ref.extractall(temp_dir)
 
                 ipynb_files = list(temp_dir.rglob("*.ipynb"))
-                logging.debug(f"Found IPYNB {len(ipynb_files):2d} files: {ipynb_files}")
+                logging.debug(f"    Found {len(ipynb_files):2d} IPYNB files")
 
                 if ipynb_files:
                     ipynb_file = ipynb_files[0]
-                    logging.debug(f"Found IPYNB file for coding assignment: {ipynb_file}")
+                    logging.debug(f"    Processing {ipynb_file} for coding assignment...")
                     converter = NotebookConverter()
                     # TODO: Get submission date from email metadata instead of zip file modification time
                     submission_date = datetime.fromtimestamp(compressed_file.stat().st_mtime)
@@ -574,7 +633,7 @@ class CodingSubmission(Submission):
                         dest_file = compressed_file.parent / f"{formal_name}.pdf"
                         shutil.move(pdf_file, dest_file)
                         self.add_report(dest_file)
-                        logging.debug(f"Generated PDF: {self.report_file}")
+                        logging.debug(f"    Generated PDF: {self.report_file}")
                         return self.report_file
                     else:                        
                         logging.error(f"! Failed to compile PDF for {ipynb_file}")

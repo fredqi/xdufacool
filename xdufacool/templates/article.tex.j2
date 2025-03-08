@@ -3,25 +3,34 @@
 % Basic packages
 \usepackage[a4paper,margin=1in]{geometry}
 \usepackage{graphicx}
-\usepackage{amsmath}
+\usepackage{amssymb,amsmath}
 \usepackage{booktabs}
 \usepackage{listings}
 \usepackage{xcolor}
 
 % CJK support
-\setmainfont{Noto Serif}
+\setmainfont[BoldFont={Noto Sans}]{Noto Serif}
 \setsansfont{Noto Sans}
 \setmonofont{Noto Sans Mono}
-\setCJKmainfont{Noto Serif CJK SC}
+\setCJKmainfont[BoldFont={Noto Sans CJK SC}]{Noto Serif CJK SC}
 \setCJKsansfont{Noto Sans CJK SC}
 \setCJKmonofont{Noto Sans Mono CJK SC}
+
+\ctexset{
+  section/name = {,、},
+  section/format = \bfseries,
+  section/number = \chinese{section}
+}
+\BLOCK{ if abstract_name }
+\renewcommand{\abstractname}{\VAR{abstract_name}}
+\BLOCK{ endif }
 
 \usepackage[colorlinks=true,linkcolor=blue]{hyperref}
 % Document metadata
 \hypersetup{
-    pdftitle={Article Title},
-    pdfauthor={Author Names},
-    pdfsubject={Article Subject}
+    pdftitle={\VAR{title}},
+    pdfauthor={\VAR{author}},
+    pdfsubject={\VAR{abstract}}
 }
 
 % Code listing setup
@@ -38,7 +47,7 @@
 }
 
 % Document info
-\title{\VAR{title}}
+\title{\textbf{\VAR{title}}}
 \author{\VAR{author}}
 \date{\VAR{date}}
 

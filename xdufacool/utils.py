@@ -74,26 +74,43 @@ def validate_paths(base_path: Path, file_paths: Union[str, List[str]], descripti
 
     return valid_paths
 
-def format_list(items, conj="and"):
+def format_list(items, conj="and", lang="en"):
     """
-    Formats a list of items into a string separated by commas,
-    with a specified conjunction before the last item.
+    Formats a list of items into a string separated by commas or enumeration marks,
+    with a specified conjunction before the last item, supporting both English and Chinese.
 
     Args:
         items (list): A list of items (can be any type that has a string representation).
-        conj (str): The conjunction to use before the last item (default: "and").
+        conj (str): The conjunction to use before the last item. 
+                    Default is "and" for English and "和" for Chinese.
+        lang (str): Language code - "en" for English, "zh" for Chinese.
 
     Returns:
         str: A formatted string of items.
     """
     if not items:
         return ""
-    elif len(items) == 1:
+    
+    # Set language-specific defaults
+    if lang == "zh":
+        # Only override if user didn't specify a custom conjunction
+        if conj == "and":  
+            conj = "和"
+        separator = "、"
+    else:
+        separator = ", "
+    
+    if len(items) == 1:
         return str(items[0])
     elif len(items) == 2:
         return f"{items[0]} {conj} {items[1]}"
     else:
-        return ", ".join([str(item) for item in items[:-1]]) + f", {conj} {str(items[-1])}"
+        if lang == "zh":
+            # Chinese format: item1、item2、item3和item4
+            return separator.join([str(item) for item in items[:-1]]) + f"{conj}{str(items[-1])}"
+        else:
+            # English format: item1, item2, item3, and item4
+            return separator.join([str(item) for item in items[:-1]]) + f", {conj} {str(items[-1])}"
 
 def load_config(filepath, keyword):
     """

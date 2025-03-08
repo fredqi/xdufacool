@@ -106,11 +106,8 @@ class EmailSubmissionCollector(SubmissionCollector):
         self.config = config
         self.email_histories = {}  # student_id -> EmailSubmissionHistory
         
-        teachers = list(assignment.course.teachers.values())
-        if assignment.course.language == 'zh':
-            self.teacher_name = format_list(teachers, conj="、")
-        else:
-            self.teacher_name = format_list(teachers, conj="and")
+        self.teacher_name = format_list(list(assignment.course.teachers.values()),
+                                        lang=assignment.course.language)
         
         self.teacher_email = config.get('email', '')
         self.email_template = config.get('email_template', '')

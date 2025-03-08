@@ -66,13 +66,13 @@ def create_assignment(args):
             logging.error(f"Assignment with ID {assignment_id} not found.")
             continue
 
-        logging.info(f"Creating package for {assignment} ...")
-        logging.debug(f"Create config: {create_config}")
-        tarball_path = assignment.prepare()
-        if tarball_path is None:
-            logging.error(f"Failed to create distribution tarball for {assignment}.")
+        logging.info(f"* Creating tarball for exercise {assignment} ...")
+        logging.debug(f"  Distribution config: {create_config}")
+        dist_filepath = assignment.prepare()
+        if dist_filepath is None:
+            logging.error(f"! Failed to create distribution file for {assignment}.")
             continue
-        notification_template = create_config.get('notification_template', 'notification.md.j2')
+        notification_template = create_config.get('notification_template', 'guide.md.j2')
         assignment.generate_notification(notification_template)
 
 def create_summary(args):

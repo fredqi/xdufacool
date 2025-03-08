@@ -34,6 +34,7 @@ from jinja2 import Environment, FileSystemLoader
 from configparser import ConfigParser
 # from configparser import ExtendedInterpolation
 
+from xdufacool.utils import format_list
 from xdufacool.score_helper import ScoreStat
 from xdufacool.score_helper import ScoreAnalysis
 
@@ -698,8 +699,8 @@ class SummaryComposer(object):
         if not template.exists():
             logging.error(f"! Summary template {template.relative_to(self.base_dir)} does not exist.")
             return
-        teachers = student_group.course.teachers
-        teachers_desc = "、".join([teachers[key].name for key in student_group.teacher_ids])
+        teachers_all = student_group.course.teachers
+        teachers = [teachers_all[key].name for key in student_group.teacher_ids]
         summary_date = datetime.strptime(summary_config['date'], "%Y-%m-%d")
         summary_date_desc = summary_date.strftime("%Y年%m月%d日")
         merger = MailMerge(template)
@@ -708,7 +709,7 @@ class SummaryComposer(object):
                       "hours": student_group.course.teaching_hours,
                       "credits": student_group.course.credits,
                       "classes": ", ".join(student_group.admin_classes),
-                      "teachers": teachers_desc,
+                      "teachers": format_list(teachers, conj="、", lang=student_group.course.language),
                       "summary_date": summary_date_desc}
         # logging.debug(f"    Title info: {title_info}")
         merger.merge(**title_info)
