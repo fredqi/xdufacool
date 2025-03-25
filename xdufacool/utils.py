@@ -90,27 +90,23 @@ def format_list(items, conj="and", lang="en"):
     """
     if not items:
         return ""
-    
-    # Set language-specific defaults
-    if lang == "zh":
-        # Only override if user didn't specify a custom conjunction
-        if conj == "and":  
-            conj = "和"
-        separator = "、"
-    else:
-        separator = ", "
-    
     if len(items) == 1:
         return str(items[0])
     elif len(items) == 2:
-        return f"{items[0]} {conj} {items[1]}"
+        conj = "、" if lang == "zh" else " and "
+        return f"{items[0]}{conj}{items[1]}"
     else:
+        # Chinese format: item1、item2、item3和item4
+        # English format: item1, item2, item3, and item4
+        sep = "、" if lang == "zh" else ", "
+        ret = sep.join([str(item) for item in items[:-1]])
         if lang == "zh":
-            # Chinese format: item1、item2、item3和item4
-            return separator.join([str(item) for item in items[:-1]]) + f"{conj}{str(items[-1])}"
+            if conj == "and":
+                conj = "和"
+            ret += f"{conj}{items[-1]}"
         else:
-            # English format: item1, item2, item3, and item4
-            return separator.join([str(item) for item in items[:-1]]) + f", {conj} {str(items[-1])}"
+            ret += f"{sep} {conj} {items[-1]}"
+        return ret
 
 def load_config(filepath, keyword):
     """

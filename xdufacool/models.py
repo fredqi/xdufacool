@@ -253,7 +253,6 @@ class Assignment:
         Uses LaTeXConverter for template rendering and PDF generation.
         """
         pdf_files = []
-        submissions_dir = self.dirs['submissions']
         for student_id in sorted(self.submissions.keys()):
             submission = self.submissions[student_id]
             if not submission.report_file:
@@ -280,12 +279,14 @@ class Assignment:
                 submissions=pdf_files,
                 language=self.course.language
             )
-            tex_file = submissions_dir / f"{output_name}.tex"
+            # submissions_dir = self.dirs['submissions']
+            workspace_dir = self.course.workspace_dir
+            tex_file = workspace_dir / f"{output_name}.tex"
             with open(tex_file, "w") as f:
                 f.write(latex_content)
 
             pdf_compiler = PDFCompiler() 
-            pdf_path = pdf_compiler.compile(tex_file, submissions_dir, True)
+            pdf_path = pdf_compiler.compile(tex_file, workspace_dir, True)
 
             if not pdf_path:
                 logging.error(f"! Failed to merge PDFs for {self.assignment_id}")
@@ -555,7 +556,9 @@ class Submission:
             raise FileNotFoundError(f"Report file not found: {report_file}")
             
         if report_file.suffix.lower() == '.pdf':
-            self.report_file = report_file.relative_to(self.assignment.dirs['submissions'])
+            # self.assignment.dirs['submissions']
+            workspace_dir = self.assignment.course.workspace_dir
+            self.report_file = report_file.relative_to(workspace_dir)
             logging.info(f"Added report: {self.report_file}")
         else:
             logging.warning(f"! Invalid report file format: {report_file}")

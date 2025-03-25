@@ -49,10 +49,12 @@ class LocalSubmissionCollector(SubmissionCollector):
             return None
         
     def collect_submissions(self):
-        file_paths = list(self.submission_dir.rglob(f"{self.assignment.common_name()}*"))
+        """Collect submissions from local filesystem."""
+        assignment_code = self.assignment.common_name()
+        file_paths = list(self.submission_dir.rglob(f"{assignment_code}*"))
         file_paths.sort(key=lambda x: (x.suffix.lower() != '.pdf', x))
         
-        for file_path in tqdm(file_paths, desc="Collecting submissions"):
+        for file_path in tqdm(file_paths, desc=f"[{assignment_code}] Collecting submissions"):
             # relative_path = file_path.relative_to(self.submission_dir)
             if not file_path.is_file():
                 continue
@@ -201,7 +203,7 @@ class EmailSubmissionCollector(SubmissionCollector):
         
         # Mark previous email as seen if this is newer
         if prev_uid:
-            self.mail_helper.flag(prev_uid, ['Seen', 'Answered'])
+            self.mail_helper.flag(prev_uid, ['Seen'])
             
     def _build_search_conditions(self):
         """Build email search conditions based on configuration."""
@@ -281,7 +283,7 @@ class EmailSubmissionCollector(SubmissionCollector):
                 if msg:
                     logging.debug(f"    Sending confirmation to {to_addr}")
                     self.mail_helper.send_email(self.teacher_email, to_addr, msg)
-                    self.mail_helper.flag(history.latest_email_uid, ['Seen'])
+                    self.mail_helper.flag(history.latest_email_uid, ['Seen', 'Answered'])
         self.disconnect()
 
 class EmailSubmissionHistory:
@@ -362,6 +364,7 @@ class EmailSubmissionHistory:
                                  for sha, fn in self.file_checksums.items()),
             'course_name': self.submission.assignment.course.topic,
             'teacher_name': teacher_name,
+            'comment': '',
             'language': self.submission.assignment.course.language,
         }
 
@@ -384,9 +387,9 @@ class EmailSubmissionHistory:
         
         if not has_doc:
             if data['language'] == 'zh':
-                data['comment'] += f"\n！ 缺少{expected_exts}格式的作业附件。\n"
+                data['comment'] += f"！ 缺少{expected_exts}格式的作业附件。\n提示：请勿使用\"超大附件\"功能发送作业。\n"
             else:
-                data['comment'] += f"\n! Missing attachments with extensions: {expected_exts}.\n"
+                data['comment'] += f"! Missing attachments with extensions: {expected_exts}.\n"
             
         if hasattr(self.submission, 'leaderboard'):
             score_percentage = self.submission.score * 100

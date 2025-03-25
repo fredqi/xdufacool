@@ -7,6 +7,7 @@ import nbformat
 from nbconvert import LatexExporter
 from traitlets.config import Config
 from pathlib import Path
+import re
 
 
 class PDFCompiler:
@@ -244,6 +245,7 @@ class NotebookConverter:
                 if hasattr(notebook_content, 'metadata'):
                     notebook_content.metadata.update(metadata)
                 self._truncate_long_outputs(notebook_content)
+                self._handle_raw_cells(notebook_content)  # Handle raw cells before patching
                 self._patch_math_split(notebook_content)
                 body, resources = self.exporter.from_notebook_node(notebook_content)
             if assignment_folder and figures:
@@ -312,17 +314,130 @@ class NotebookConverter:
     def _patch_math_split(self, nb):
         """
         Patches 'split' environments in Markdown cells to be enclosed in display math mode.
-
-        This function iterates through all Markdown cells in the notebook and replaces
-        '\\begin{split}' with '$$\\begin{split}' and '\\end{split}' with '\\end{split}$$'.
+        
+        Only applies the patch if the split environment is not already within display math delimiters
+        (either $$...$$ or \\[...\\]).
+        Handles split environments that span multiple lines.
 
         Args:
             nb (nbformat.NotebookNode): The notebook object.
         """
+        # Define regex patterns to identify split environments already in math mode
+        # These patterns look for split environments enclosed in display math delimiters
+        # Using re.DOTALL to make dot match newlines, handling multi-line environments
+        patterns_in_math = [
+            r'\$\$(.*?\\begin\s*{\s*split\s*}.*?\\end\s*{\s*split\s*}.*?)\$\$',  # Matches $$...\begin{split}...\end{split}...$$
+            r'\\\[(.*?\\begin\s*{\s*split\s*}.*?\\end\s*{\s*split\s*}.*?)\\\]',  # Matches \[...\begin{split}...\end{split}...\]
+            r'\\begin\s*{\s*equation\*?\s*}(.*?\\begin\s*{\s*split\s*}.*?\\end\s*{\s*split\s*}.*?)\\end\s*{\s*equation\*?\s*}'  # Matches equation environments
+        ]
+        
+        # Pattern to find standalone split environments (not already in math mode)
+        standalone_split_pattern = r'\\begin\s*{\s*split\s*}(.*?)\\end\s*{\s*split\s*}'
+        
         for cell in nb.cells:
             if cell.cell_type == 'markdown':
-                cell.source = cell.source.replace(r'\begin{split}', r'$$\begin{split}')
-                cell.source = cell.source.replace(r'\end{split}', r'\end{split}$$')
+                # First, find all segments that are already in display math mode
+                protected_segments = []
+                for pattern in patterns_in_math:
+                    matches = re.finditer(pattern, cell.source, re.DOTALL)
+                    for match in matches:
+                        protected_segments.append((match.start(), match.end()))
+                
+                # If we found protected segments, we need to be selective in our replacements
+                if protected_segments:
+                    # Sort segments by start position
+                    protected_segments.sort()
+                    
+                    # Build the new source by processing each section
+                    new_source = ""
+                    last_end = 0
+                    
+                    for start, end in protected_segments:
+                        # Apply replacements to the text before the protected segment
+                        segment_before = cell.source[last_end:start]
+                        
+                        # Process standalone split environments in this segment
+                        segment_before = re.sub(
+                            standalone_split_pattern,
+                            r'$$\\begin{split}\1\\end{split}$$',
+                            segment_before,
+                            flags=re.DOTALL
+                        )
+                        
+                        # Add the processed segment before and the protected segment as-is
+                        new_source += segment_before + cell.source[start:end]
+                        last_end = end
+                    
+                    # Process any remaining text after the last protected segment
+                    if last_end < len(cell.source):
+                        segment_after = cell.source[last_end:]
+                        
+                        # Process standalone split environments in this segment
+                        segment_after = re.sub(
+                            standalone_split_pattern,
+                            r'$$\\begin{split}\1\\end{split}$$',
+                            segment_after,
+                            flags=re.DOTALL
+                        )
+                        
+                        new_source += segment_after
+                    
+                    cell.source = new_source
+                else:
+                    # No protected segments found, apply replacements to the entire source
+                    cell.source = re.sub(
+                        standalone_split_pattern,
+                        r'$$\\begin{split}\1\\end{split}$$',
+                        cell.source,
+                        flags=re.DOTALL
+                    )
+
+    def _handle_raw_cells(self, nb):
+        """
+        Handle raw cells in the notebook, particularly those that may have been
+        unintentionally converted from markdown cells.
+        
+        This method examines raw cells and converts them to markdown cells if they 
+        appear to contain markdown content rather than truly raw content.
+        
+        Args:
+            nb (nbformat.NotebookNode): The notebook object.
+        """
+        for cell in nb.cells:
+            if cell.cell_type == 'raw':
+                # Check if this cell has metadata indicating its format
+                cell_format = cell.get('metadata', {}).get('format', '')
+                
+                # If the cell is explicitly for LaTeX, keep it as raw
+                if cell_format == 'latex':
+                    continue
+                    
+                # Look for common markdown indicators in the content
+                content = cell.source
+                markdown_indicators = [
+                    '# ', '## ', '### ', '#### ', '##### ', '###### ',  # Headers
+                    '- ', '* ', '1. ',                                  # Lists
+                    '```', '$$', '$', '\\begin{',                       # Code blocks and math
+                    '![', '[', '**', '_', '|'                           # Images, links, formatting, tables
+                ]
+                
+                # Check if the content looks like markdown
+                is_likely_markdown = any(indicator in content for indicator in markdown_indicators)
+                
+                # Additional check for LaTeX commands (common in math-heavy notebooks)
+                latex_pattern = r'\\[a-zA-Z]+'
+                if re.search(latex_pattern, content):
+                    is_likely_markdown = True
+                
+                # If it looks like markdown, convert the cell type
+                if is_likely_markdown:
+                    logging.debug(f"Converting raw cell to markdown: {content[:50]}...")
+                    cell.cell_type = 'markdown'
+                else:
+                    # For raw cells that don't look like markdown and aren't explicitly for LaTeX,
+                    # we should consider them as not intended for the LaTeX output
+                    logging.debug(f"Skipping non-markdown raw cell: {content[:50]}...")
+                    cell.source = ''  # Clear the content to exclude it from output
 
 def docx_to_pdf(docx_filepath, pdf_filepath):
     """Converts a DOCX file to PDF."""
