@@ -51,6 +51,7 @@ class LocalSubmissionCollector(SubmissionCollector):
     def collect_submissions(self):
         """Collect submissions from local filesystem."""
         assignment_code = self.assignment.common_name()
+        #assignment_code = self.assignment.assignment_id
         file_paths = list(self.submission_dir.rglob(f"{assignment_code}*"))
         file_paths.sort(key=lambda x: (x.suffix.lower() != '.pdf', x))
         
@@ -210,8 +211,12 @@ class EmailSubmissionCollector(SubmissionCollector):
         conditions = []
         
         # Add subject search condition
-        if self.assignment.common_name():
-            conditions.append(f'SUBJECT "{self.assignment.common_name()}"')
+        common_name = self.assignment.common_name()
+        assignment_id = self.assignment.assignment_id
+        if len(self.assignment.course.assignments) == 1:
+            conditions.append(f'SUBJECT "{assignment_id}" OR SUBJECT "{common_name}"')
+        else:
+            conditions.append(f'SUBJECT "{assignment_id}"')
             
         # Add date condition if course has start date
         if hasattr(self.assignment.course, 'start_date'):
