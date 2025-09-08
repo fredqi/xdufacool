@@ -38,6 +38,7 @@ from xdufacool.utils import format_list
 from xdufacool.score_helper import ScoreStat
 from xdufacool.score_helper import ScoreAnalysis
 
+import csv
 import openpyxl
 from mailmerge import MailMerge
 # from datetime import datetime
@@ -273,7 +274,7 @@ class Markdown2Docx(object):
             #             # table = cell.add_table(2, 2)
             #             self.add_exam_stat_table(cell)
             else:
-                print("Unhandled", type(item), item.content)
+                print("Unhandled", type(item), item)
 
     def add_table_row(self, row_cells, items, header=False):
         """Add a row to a table."""
@@ -486,7 +487,13 @@ def sheet_replace():
 
 
 class SummaryComposer(object):
-    """Composer for teaching summary."""
+    """
+    Composer for teaching summary.
+    To construct summary, there should be a teaching record and a summary text,
+    which are stored under f"{base_dir}/eval" in an iterative manner;
+    and score files, which are stored under f"{base_dir}/eval/semester",
+    where the relative path is specified within in config file.
+    """
 
     def __init__(self, course_order, base_dir, workspace_dir):
         self.table_width = Cm(15)
@@ -494,7 +501,8 @@ class SummaryComposer(object):
         self.course_order = course_order
         self.document = None
         self.base_dir = base_dir
-        self.summary_dir = workspace_dir / "summary"
+        # Changing to workspace dir instead of subdir "summary"
+        self.summary_dir = workspace_dir # / "summary"
         self.summary_dir.mkdir(parents=True, exist_ok=True)
         logging.debug(f"    Summary dir: {self.summary_dir.relative_to(self.base_dir)}")
         
@@ -557,6 +565,26 @@ class SummaryComposer(object):
         core_prop.title = f"{self.course.course_name} 教学一览表"
         core_prop.subject = f"{self.course.course_name} {self.course.course_id}"
         core_prop.comments = str(self.course)
+
+    def _load_teaching_records(self, teaching_record):
+        fp = teaching_record.relative_to(self.base_dir)
+        if not teaching_record.exists():
+            logging.error(f"! Teaching record {fp} does not exist.")
+            return None
+
+        if '.xlsx' == teaching_record.suffix:
+            wb = openpyxl.load_workbook(teaching_record)
+        elif '.csv' == teaching_record.suffix:
+            wb = openpyxl.Workbook()
+            with open(teaching_record, 'r') as istream:
+                sheet = wb.active
+                reader = csv.reader(istream)
+                for row in reader:
+                    sheet.append(row)
+        else:
+            logging.error(f"! Teaching record {fp} is with unsupported format.")
+            return None
+        self.teaching_records = wb.active
 
     def load_scores(self, score_filepath):
         sheet = openpyxl.load_workbook(score_filepath).active
@@ -633,9 +661,9 @@ class SummaryComposer(object):
             row_cells = table.add_row().cells
             self.set_center(row_cells[0])
             self.set_bold(row_cells[0], f"{idx:d}")
-            # rint(values, type(values[0]))            
-            # logging.debug(f"{idx:d} {values[0]}")
-            row_cells[1].text = f"{values[0]:%Y-%m-%d}"
+            logging.debug(f"Teaching date: {idx:d} {values[0]}")
+            date_obj = datetime.strptime(values[0], '%m-%d-%Y')
+            row_cells[1].text = f"{date_obj:%Y-%m-%d}"
             self.set_center(row_cells[1])
             
             row_cells[2].text = values[1]
@@ -733,9 +761,9 @@ class SummaryComposer(object):
     def create_summary(self, summary_filepath, teaching_records, score_filepath, summary_text):
         self.document = docx.Document(summary_filepath)
         self.config_styles()
-        wb = openpyxl.load_workbook(teaching_records)
-        self.teaching_records = wb.active
         logging.debug(f"    Using summary text: {summary_text.relative_to(self.base_dir)}")
+        logging.debug(f"    Using teaching records: {teaching_records.relative_to(self.base_dir)}")
+        self._load_teaching_records(teaching_records)
         logging.debug(f"    Using score file: {score_filepath.relative_to(self.base_dir)}")
         rendered_markdown = self.fill_score_analysis(score_filepath, summary_text)
         # print(rendered_markdown)

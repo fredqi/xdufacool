@@ -84,9 +84,9 @@ class StudentGroup:
         # logging.debug(f"{working_dir} {summary_config.get('text', 'README.md')}")
         logging.debug(f"    Summary report: {self.summary_filepath.relative_to(self.course.base_dir)}")
         composer.create_summary(self.summary_filepath,
-                                composer.summary_dir / summary_config.get('teaching_record', ""),
-                                composer.summary_dir / self.score_filename,
-                                composer.summary_dir / summary_config.get('text', "README.md"))
+                                composer.base_dir / summary_config.get('teaching_record', ""),
+                                composer.base_dir / self.score_filename,
+                                composer.base_dir / summary_config.get('text', "README.md"))
 
 @dataclass
 class Course:

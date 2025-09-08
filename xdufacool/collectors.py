@@ -1,6 +1,7 @@
 import logging
 import hashlib
 import random
+import os
 from pathlib import Path
 from datetime import datetime
 from email.header import Header
@@ -51,7 +52,7 @@ class LocalSubmissionCollector(SubmissionCollector):
     def collect_submissions(self):
         """Collect submissions from local filesystem."""
         assignment_code = self.assignment.common_name()
-        #assignment_code = self.assignment.assignment_id
+        # assignment_code = self.assignment.assignment_id
         file_paths = list(self.submission_dir.rglob(f"{assignment_code}*"))
         file_paths.sort(key=lambda x: (x.suffix.lower() != '.pdf', x))
         
@@ -138,7 +139,7 @@ class EmailSubmissionCollector(SubmissionCollector):
             smtp_server = self.config.get('smtp_server', "smtp.gmail.com")
         self.mail_helper = MailHelper(imap_server, smtp_server, proxy=proxy)
         self.mail_helper.login(self.config.get('email', ''),
-                               self.config.get('email_password', ''),
+                               os.environ.get('EMAIL_PASSWORD', self.config.get('email_password', '')),
                                self.mail_label)
         logging.info(f"* Logged in as {self.config.get('email', '')}")
         

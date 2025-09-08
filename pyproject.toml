@@ -58,6 +58,7 @@ invoice_helper = "xdufacool.invoice:collect_invoice"
 
 [tool.setuptools]
 packages = ["xdufacool"]
+include-package-data = true
 
 [tool.setuptools.package-data]
 xdufacool = ["templates/*.tex.j2"]
