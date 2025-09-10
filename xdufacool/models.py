@@ -201,6 +201,10 @@ class Assignment:
     def __str__(self):
         return f"{self.title} ({self.assignment_id})"
 
+    def get_assignment_type(self):
+        assignment_type = self.__class__.__name__.replace('Assignment', '').lower()
+        return assignment_type if assignment_type else 'generic'
+    
     def get_extensions(self):
         exts = self.accepted_extensions['compressed'] + self.alternative_extensions['compressed']
         return set(exts)
@@ -225,7 +229,7 @@ class Assignment:
             'due_date': self.due_date.strftime('%Y-%m-%d'),
             'teachers': teachers_desc,
             'language': self.course.language,
-            'assignment_type': self.__class__.__name__
+            'assignment_type': self.get_assignment_type()
         }
         logging.debug(f"Assignment context: {context}")
         env = Environment(loader=FileSystemLoader(template_dir))

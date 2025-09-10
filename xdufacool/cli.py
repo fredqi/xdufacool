@@ -108,28 +108,25 @@ def main():
     """Parses command-line arguments and dispatches to appropriate subcommands."""
     parser = argparse.ArgumentParser(description="Manage assignments and submissions.")
     parent_parser = argparse.ArgumentParser(add_help=False)
+    parent_parser.add_argument("--debug", action="store_true", help="Enable debug logging")
     parent_parser.add_argument("-c", "--config", default="config.yml", help="Config file path")
     parent_parser.add_argument("-b", "--base-dir", default=None, help="Base directory")
     subparsers = parser.add_subparsers(title="subcommands", dest="subcommand", required=True)
 
     create_parser = subparsers.add_parser("create", parents=[parent_parser],
                                           help="Create assignment for distribution")
-    # create_parser.add_argument("-o", "--output-dir", default="dist",
-    #                             help="Output directory")
     create_parser.add_argument("assignment_ids", nargs="*",
                                 help="Assignment IDs to create (default: all)")
     create_parser.set_defaults(func=create_assignment)
 
     collect_parser = subparsers.add_parser("collect", parents=[parent_parser],
                                            help="Collect submissions")
-    # collect_parser.add_argument("submission_dir", help="Submission directory")
     collect_parser.add_argument("assignment_ids", nargs="*",
                                 help="Assignment IDs to collect (default: all)")
     collect_parser.set_defaults(func=collect_submissions)
 
     summary_parser = subparsers.add_parser("summary", parents=[parent_parser],
                                            help="Create teaching summary")
-    # summary_parser.add_argument("working_dir", default=".", help="Working directory")
     summary_parser.set_defaults(func=create_summary)
 
     check_parser = subparsers.add_parser("check", parents=[parent_parser],
@@ -137,7 +134,9 @@ def main():
     check_parser.set_defaults(func=check_submissions)
 
     args = parser.parse_args()
-    setup_logging('xdufacool.log', logging.INFO)
+    # Set logging level based on --debug flag
+    log_level = logging.DEBUG if getattr(args, "debug", False) else logging.INFO
+    setup_logging('xdufacool.log', log_level)
     logging.info("Starting xdufacool ...")
     logging.debug(f"Args: {args}")
     args.func(args)
