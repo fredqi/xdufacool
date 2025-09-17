@@ -139,7 +139,7 @@ class EmailSubmissionCollector(SubmissionCollector):
             smtp_server = self.config.get('smtp_server', "smtp.gmail.com")
         self.mail_helper = MailHelper(imap_server, smtp_server, proxy=proxy)
         self.mail_helper.login(self.config.get('email', ''),
-                               os.environ.get('EMAIL_PASSWORD', self.config.get('email_password', '')),
+                               os.getenv('EMAIL_PASSWORD', self.config.get('email_password', '')),
                                self.mail_label)
         logging.info(f"* Logged in as {self.config.get('email', '')}")
         

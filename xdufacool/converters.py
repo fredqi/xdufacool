@@ -9,6 +9,7 @@ from traitlets.config import Config
 from pathlib import Path
 import re
 
+latex_logger = logging.getLogger("latex")
 
 class PDFCompiler:
     """
@@ -59,8 +60,9 @@ class PDFCompiler:
                 
                 if result.returncode != 0:
                     success = False
-                    logging.error(f"LaTeX compilation failed ({basename}, attempt {i+1})")
-                    logging.error(f"Command output:\n{result.stdout}")
+                    logging.error(f"LaTeX compilation failed for {tex_file}, attempt {i+1})")
+                    latex_logger.error(f"LaTeX compilation error on {tex_file}")
+                    latex_logger.error(f"{result.stdout}")
                     # logging.error(f"Command error:\n{result.stderr}")
                     clean_up = False
                     break

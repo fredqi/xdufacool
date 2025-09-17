@@ -600,12 +600,13 @@ class CodingSubmission(Submission):
             logging.error(f"! File not found: {compressed_file}")
             return None
 
-        common_name = self.assignment.common_name()
+        # common_name = self.assignment.common_name()
         formal_name = self.formal_name()
+        student_id = self.student.student_id
 
         try:
             # Create a temporary directory
-            with tempfile.TemporaryDirectory(prefix=f"{common_name}-") as temp_dir:
+            with tempfile.TemporaryDirectory(prefix=f"{student_id}-") as temp_dir:
                 temp_dir = Path(temp_dir)
                 logging.debug(f"  Created temporary directory: {temp_dir}")
 

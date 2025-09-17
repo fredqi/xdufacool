@@ -20,12 +20,25 @@
 import sys
 import yaml
 import logging
+import logging.config
 from pathlib import Path
 from typing import Union, List
 
+def setup_logging(log_level=logging.INFO):
+    config_path = Path(__file__).parent / "logging.yaml"
+    with config_path.open() as f:
+        config = yaml.safe_load(f)
+        level_name = logging.getLevelName(log_level)
+        file_handler_conf = config.get("handlers", {}).get("file_handler", {})
+        if level_name and file_handler_conf:
+            config['root']['level'] = level_name
+            file_handler_conf["level"] = level_name
+
+        logging.config.dictConfig(config)
+
 # https://stackoverflow.com/questions/14058453/
 # making-python-loggers-output-all-messages-to-stdout-in-addition-to-log-file
-def setup_logging(logfile, level=logging.INFO, stdout_level=logging.WARNING):
+def setup_logging_previous(logfile, level=logging.INFO, stdout_level=logging.WARNING):
     """
     Set up logging to both a file and stdout, with configurable levels for each.
     """

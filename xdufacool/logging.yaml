@@ -1,0 +1,36 @@
+version: 1
+disable_existing_loggers: False
+
+formatters:
+  simple:
+    format: '%(asctime)s, %(levelname)8s, %(message)s'
+    datefmt: '%Y-%m-%d %H:%M:%S'
+
+handlers:
+  file_handler:
+    class: logging.FileHandler
+    level: INFO
+    formatter: simple
+    filename: xdufacool.log
+
+  stdout_handler:
+    class: logging.StreamHandler
+    level: WARNING
+    formatter: simple
+    stream: ext://sys.stdout
+
+  latex_file_handler:
+    class: logging.FileHandler
+    level: ERROR
+    formatter: simple
+    filename: latex_errors.log
+
+loggers:
+  latex:
+    level: ERROR
+    handlers: [latex_file_handler]
+    propagate: False
+
+root:
+  level: INFO
+  handlers: [file_handler, stdout_handler]

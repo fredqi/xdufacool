@@ -3,6 +3,7 @@ import logging
 import argparse
 import sys
 import imaplib
+from dotenv import load_dotenv
 from pathlib import Path
 from xdufacool.models import Course
 from xdufacool.utils import setup_logging, load_config
@@ -136,9 +137,11 @@ def main():
     args = parser.parse_args()
     # Set logging level based on --debug flag
     log_level = logging.DEBUG if getattr(args, "debug", False) else logging.INFO
-    setup_logging('xdufacool.log', log_level)
+    # setup_logging('xdufacool.log', log_level)
+    setup_logging(log_level)
     logging.info("Starting xdufacool ...")
     logging.debug(f"Args: {args}")
+    load_dotenv(dotenv_path=".env")
     args.func(args)
 
 if __name__ == "__main__":
