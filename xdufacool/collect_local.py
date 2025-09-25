@@ -717,7 +717,7 @@ def process_zip_submission(zip_filepath):
     assignment_type = "coding"
     try:
         # Create a temporary directory with a UUID as part of its name
-        with tempfile.TemporaryDirectory(prefix=f"{course_key}-") as temp_dir:
+        with tempfile.TemporaryDirectory(prefix=f"{student_id}-") as temp_dir:
             temp_dir = Path(temp_dir)
             logging.info(f"Created temporary directory: {temp_dir}")
 

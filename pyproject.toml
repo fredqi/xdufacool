@@ -7,7 +7,7 @@ name = "xdufacool"
 version = "0.9.0"
 description = "A set of toolkit for faculty members in the Xidian University."
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.8"
 license = {file = "LICENSE"}
 keywords = ["xidian", "university", "faculty", "toolkit"]
 authors = [
@@ -18,7 +18,7 @@ maintainers = [
 ]
 classifiers = [
   "Development Status :: 4 - Beta",
-  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.8",
 ]
 dependencies = [
   "dotenv",
@@ -31,7 +31,7 @@ dependencies = [
   "jupytext",
   "openpyxl",
   "requests",
-  "pyyaml",
+  "PyYAML",
   "pypandoc",
   "pysocks",
   "pygments",
@@ -62,7 +62,7 @@ packages = ["xdufacool"]
 include-package-data = true
 
 [tool.setuptools.package-data]
-xdufacool = ["templates/*.tex.j2"]
+xdufacool = ["templates/*.tex.j2", "logging.yaml"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"] 

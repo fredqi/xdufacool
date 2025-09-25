@@ -3,42 +3,36 @@ name: Unit Tests
 on:
   push:
     paths:
-      - 'setup.py'
-      - 'environment.yml'
+      - 'pyproject.toml'
       - 'xdufacool/**'
       - 'tests/**'
 
 jobs:
   testing:
- 
     runs-on: ubuntu-${{ matrix.os }}
     strategy:
       matrix:
-        python: [3.8, 3.9]
-        os: [20.04, 22.04]
+        python: ['3.10', '3.12']
+        os: ['22.04', '24.04']
 
     env:
       LOG_FILE: ubuntu-${{ matrix.os }}-py${{ matrix.python }}.log
 
     steps:
     - name: Checkout
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
 
-    - name: Setup mini-conda
-      uses: conda-incubator/setup-miniconda@v2
+    - name: Set up Python ${{ matrix.python }}
+      uses: actions/setup-python@v4
       with:
-        activate-environment: xdufacool
-        environment-file: environment.yml
         python-version: ${{ matrix.python }}
-        auto-activate-base: false
-          
-    # - name: Lint with flake8
-    #   run: |
-    #     pip install flake8
-    #     # stop the build if there are Python syntax errors or undefined names
-    #     flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
-    #     # exit-zero treats all errors as warnings. The GitHub editor is 127 chars wide
-    #     flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+
+    - name: Install package
+      run: |
+        python -m venv venv
+        source venv/bin/activate
+        pip install --upgrade pip
+        pip install .[dev]
 
     - name: Unit Tests
       run: |
@@ -46,23 +40,10 @@ jobs:
       continue-on-error: true
       
     - name: Upload logs
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
-        name: logs
+        name: ${{ env.LOG_FILE }}
         path: ${{ env.LOG_FILE }}
-
-    # - name: Slack Notification
-    #   uses: rtCamp/action-slack-notify@master
-    #   if: ${{ always() }}
-    #   env:
-    #     SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
-    #     SLACK_CHANNEL: teaching
-    #     SLACK_ICON_EMOJI: ':mailbox:'
-    #     SLACK_USERNAME: 'GitHub Action Bot'
-    #     SLACK_COLOR: 'good'
-    #     SLACK_TITLE: ${{ github.workflow }}
-    #     SLACK_MESSAGE: "${{ github.workflow }} ${{ job.status }} with Python ${{ matrix.python-version }} on ${{ runner.os }}."
-    #     SLACK_FOOTER: ''
 
   slack:
     runs-on: ubuntu-latest
@@ -73,17 +54,17 @@ jobs:
       REPO_NAME: ${{ github.event.repository.name }}
     
     steps:
-    - uses: actions/download-artifact@v3
+    - uses: actions/download-artifact@v4
       with:
-        name: logs
+        path: logs
 
-    - name: Collect compiled slides
+    - name: Collect logs
+      id: message
       run: |
-        ls *.log | sed -e 's/^/:white_check_mark: /g' | xargs > files.txt
-        cat files.txt
-        DOCS="\"$(sed -e 's/.log /", "/g' -e 's/.log//g' files.txt)\""
-        echo ${DOCS}
-        echo "docs={'logs': [${DOCS}]}" >> $GITHUB_ENV
+        MESSAGE=$(find logs -mindepth 1 -maxdepth 1 -type d | sed -e 's|logs/||' -e 's/^/:white_check_mark: /' | sort)
+        echo "message<<EOF" >> $GITHUB_OUTPUT
+        echo "${MESSAGE}" >> $GITHUB_OUTPUT
+        echo "EOF" >> $GITHUB_OUTPUT
 
     - name: Slack Notification
       uses: rtCamp/action-slack-notify@master
@@ -93,8 +74,8 @@ jobs:
         SLACK_CHANNEL: teaching
         SLACK_COLOR: 'success'
         SLACK_USERNAME: GitHub Action Bot
-        SLACK_TITLE: ${{ env.REPO_NAME }} Unit Tests
-        SLACK_MESSAGE: "${{ join(fromJSON(env.docs).logs, '\n') }}"
+        SLACK_TITLE: "${{ env.REPO_NAME }} Unit Tests"
+        SLACK_MESSAGE: "${{ steps.message.outputs.message }}"
         SLACK_FOOTER: 'triggered by ${{ github.sha }}'
         MSG_MINIMAL: true
         
