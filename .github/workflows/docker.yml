@@ -5,6 +5,15 @@ on:
     branches: master
 
 jobs:
+  ghcr-cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: dataaxiom/ghcr-cleanup-action@v1
+        with:
+          older-than: 1 year
+          keep-n-tagged: 10
+          keep-n-untagged: 5
+
   build-push-docker:
     runs-on: ubuntu-latest
     steps:
