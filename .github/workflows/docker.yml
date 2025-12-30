@@ -11,7 +11,7 @@ jobs:
       - uses: dataaxiom/ghcr-cleanup-action@v1
         with:
           older-than: 1 year
-          keep-n-tagged: 10
+          keep-n-tagged: 5
           keep-n-untagged: 5
 
   build-push-docker:

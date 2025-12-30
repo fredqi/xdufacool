@@ -132,6 +132,7 @@ class Course:
         teachers = {t['teacher_id']: Teacher(**t) for t in data['teachers']}
         course = Course(
             base_dir=Path(base_dir),  # Add base directory
+            language=course_data.get('language', 'zh'),
             course_id=course_data['course_id'],
             abbreviation=course_data['abbreviation'],
             topic=course_data['topic'],
