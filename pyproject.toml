@@ -45,17 +45,20 @@ dev = [
   "pytest",
   "pytest-cov",
 ]
+gui = [
+  "pyside6",
+]
 
 [project.urls]
 homepage = "https://github.com/fredqi/xdufacool"
 
 [project.scripts]
 xdufacool = "xdufacool.cli:main"
+dupcheck = "xdufacool.dupcheck:main"
 pdf2pptx = "xdufacool.pdf2pptx:pdf2pptx"
 syllabus = "xdufacool.syllabus:syllabus_helper"
 xduscore = "xdufacool.score_helper:xduscore"
 arxort = "xdufacool.organize_bib:organize_bib"
-invoice_helper = "xdufacool.invoice:collect_invoice"
 
 [tool.setuptools]
 packages = ["xdufacool"]
