@@ -606,7 +606,10 @@ class CodingSubmission(Submission):
         student_id = self.student.student_id
 
         try:
-            # Create a temporary directory
+            # # Create a temporary directory
+            # temp_dir = Path(tempfile.mkdtemp(prefix=f"{student_id}-"))
+            # logging.warning(f"  Created temporary directory: {temp_dir}")
+            # if True:
             with tempfile.TemporaryDirectory(prefix=f"{student_id}-") as temp_dir:
                 temp_dir = Path(temp_dir)
                 logging.debug(f"  Created temporary directory: {temp_dir}")

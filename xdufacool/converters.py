@@ -327,25 +327,48 @@ class NotebookConverter:
         # Define regex patterns to identify split environments already in math mode
         # These patterns look for split environments enclosed in display math delimiters
         # Using re.DOTALL to make dot match newlines, handling multi-line environments
-        patterns_in_math = [
-            r'\$\$(.*?\\begin\s*{\s*split\s*}.*?\\end\s*{\s*split\s*}.*?)\$\$',  # Matches $$...\begin{split}...\end{split}...$$
-            r'\\\[(.*?\\begin\s*{\s*split\s*}.*?\\end\s*{\s*split\s*}.*?)\\\]',  # Matches \[...\begin{split}...\end{split}...\]
-            r'\\begin\s*{\s*equation\*?\s*}(.*?\\begin\s*{\s*split\s*}.*?\\end\s*{\s*split\s*}.*?)\\end\s*{\s*equation\*?\s*}'  # Matches equation environments
+        # Patterns for standard LaTeX environments that are SAFE and should definitely NOT be touched
+        safe_patterns = [
+            r'\\begin\s*{\s*(?:equation|align|gather|flalign|multline)\*?\s*}.*?\\end\s*{\s*(?:equation|align|gather|flalign|multline)\*?\s*}',
+            r'\\begin\s*{\s*alignat\*?\s*}\{.*?\}.*?\\end\s*{\s*alignat\*?\s*}'
         ]
         
-        # Pattern to find standalone split environments (not already in math mode)
-        standalone_split_pattern = r'\\begin\s*{\s*split\s*}(.*?)\\end\s*{\s*split\s*}'
-        
+        # Regex to handle splits in unsafe contexts:
+        # Group 1: Matches $$...split...$$ -> needs conversion to equation*
+        # Group 3: Matches \[...split...\] -> needs conversion to equation*
+        # Group 5: Matches bare \begin{split}...\end{split} -> needs wrapping in equation*
+        # Note: We prioritize finding the delimiters first.
+        # Note: We explicitly escape curly braces \{ \} to ensure regex correctly interprets them as literals.
+        # Note: For $$ and \[, we use [^$]* and [^\]]* to prevent matching across multiple math blocks
+        unsafe_split_finder = re.compile(
+            r'(\$\$([^$]*?\\begin\s*\{\s*split\s*\}.*?\\end\s*\{\s*split\s*\}[^$]*?)\$\$)|'  # Group 1 & 2
+            r'(\\\[([^\]]*?\\begin\s*\{\s*split\s*\}.*?\\end\s*\{\s*split\s*\}[^\]]*?)\\\])|'  # Group 3 & 4
+            r'(\\begin\s*\{\s*split\s*\}.*?\\end\s*\{\s*split\s*\})',                  # Group 5
+            re.DOTALL
+        )
+
+        def replacement(match):
+            if match.group(1):  # $$...$$
+                content = match.group(2)
+                return r'\begin{equation*}' + content + r'\end{equation*}'
+            elif match.group(3): # \[...\]
+                content = match.group(4)
+                return r'\begin{equation*}' + content + r'\end{equation*}'
+            elif match.group(5): # Bare split
+                content = match.group(5)
+                return r'\begin{equation*}' + content + r'\end{equation*}'
+            return match.group(0) # Should not match if regex is correct
+
         for cell in nb.cells:
             if cell.cell_type == 'markdown':
-                # First, find all segments that are already in display math mode
+                # First, find all segments that are ALREADY in SAFE display math mode
                 protected_segments = []
-                for pattern in patterns_in_math:
+                for pattern in safe_patterns:
                     matches = re.finditer(pattern, cell.source, re.DOTALL)
                     for match in matches:
                         protected_segments.append((match.start(), match.end()))
                 
-                # If we found protected segments, we need to be selective in our replacements
+                # If we found protected (safe) segments, we process the text BETWEEN them
                 if protected_segments:
                     # Sort segments by start position
                     protected_segments.sort()
@@ -355,44 +378,24 @@ class NotebookConverter:
                     last_end = 0
                     
                     for start, end in protected_segments:
-                        # Apply replacements to the text before the protected segment
+                        # Process text before the safe segment
                         segment_before = cell.source[last_end:start]
+                        segment_before = unsafe_split_finder.sub(replacement, segment_before)
                         
-                        # Process standalone split environments in this segment
-                        segment_before = re.sub(
-                            standalone_split_pattern,
-                            r'$$\\begin{split}\1\\end{split}$$',
-                            segment_before,
-                            flags=re.DOTALL
-                        )
-                        
-                        # Add the processed segment before and the protected segment as-is
+                        # Add the processed segment before and the safe segment as-is
                         new_source += segment_before + cell.source[start:end]
                         last_end = end
                     
-                    # Process any remaining text after the last protected segment
+                    # Process any remaining text after the last safe segment
                     if last_end < len(cell.source):
                         segment_after = cell.source[last_end:]
-                        
-                        # Process standalone split environments in this segment
-                        segment_after = re.sub(
-                            standalone_split_pattern,
-                            r'$$\\begin{split}\1\\end{split}$$',
-                            segment_after,
-                            flags=re.DOTALL
-                        )
-                        
+                        segment_after = unsafe_split_finder.sub(replacement, segment_after)
                         new_source += segment_after
                     
                     cell.source = new_source
                 else:
-                    # No protected segments found, apply replacements to the entire source
-                    cell.source = re.sub(
-                        standalone_split_pattern,
-                        r'$$\\begin{split}\1\\end{split}$$',
-                        cell.source,
-                        flags=re.DOTALL
-                    )
+                    # No safe segments found, apply replacements to the entire source
+                    cell.source = unsafe_split_finder.sub(replacement, cell.source)
 
     def _handle_raw_cells(self, nb):
         """
