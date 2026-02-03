@@ -17,7 +17,11 @@
 #
 #
 #
+import os
 import sys
+import shutil
+import subprocess
+import tempfile
 import yaml
 import logging
 import logging.config
@@ -149,5 +153,68 @@ def load_config(filepath, keyword):
         return None
 
     return config[keyword]
+
+def is_tool_installed(name):
+    return shutil.which(name) is not None
+
+def repack_archive(file_path, remove_original=False, dry_run=False):
+    """Repack .rar and .7z archives to .zip format."""
+    directory = os.path.dirname(file_path)
+    filename = os.path.basename(file_path)
+    base_name, ext = os.path.splitext(filename)
+    
+    # Target zip file path
+    zip_path = os.path.join(directory, base_name + ".zip")
+    
+    if os.path.exists(zip_path):
+        logging.info(f"[SKIP] Target zip already exists: {zip_path}")
+        return False
+
+    if dry_run:
+        logging.info(f"[DRY RUN] Would repack: {file_path} -> {zip_path}")
+        if remove_original:
+            logging.info(f"          And delete original: {file_path}")
+        return True
+
+    logging.info(f"[PROCESSING] {file_path}...")
+
+    # Create a temporary directory for extraction
+    with tempfile.TemporaryDirectory() as temp_dir:
+        # extraction command using 7z
+        # -y: assume yes on all queries (overwrite)
+        # -o{dir}: set output directory (no space between -o and dir)
+        cmd = ["7z", "x", file_path, f"-o{temp_dir}", "-y"]
+        
+        try:
+            # Suppress output unless error
+            result = subprocess.run(cmd, capture_output=True, text=True)
+            if result.returncode != 0:
+                logging.error(f"[ERROR] Failed to extract {filename}:")
+                logging.error(result.stderr)
+                return False
+            
+            # Repack to zip
+            # shutil.make_archive creates a zip file. 
+            # root_dir is the directory to start archiving from (temp_dir)
+            # base_name is the path to the zip file (excluding .zip extension)
+            shutil.make_archive(os.path.join(directory, base_name), 'zip', temp_dir)
+            logging.info(f"[SUCCESS] Created {zip_path}")
+            
+            if remove_original:
+                os.remove(file_path)
+                logging.info(f"[REMOVED] Original file deleted: {file_path}")
+                
+            return True
+
+        except Exception as e:
+            logging.error(f"[ERROR] Exception processing {filename}: {e}")
+            return False
+
+def normalize_filename(filename):
+    """Formalize filenames by removing carriage returns and newlines."""
+    # Remove newlines and carriage returns
+    new_name = filename.replace('\r', '').replace('\n', '')
+    return new_name
+
 # 
 # utils.py ends here

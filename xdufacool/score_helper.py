@@ -19,9 +19,11 @@
 #
 import os
 import csv
+import sys
 import time
 # import xlrd
 # import xlwt
+import openpyxl
 import numpy as np
 from itertools import groupby
 from dataclasses import dataclass, field
@@ -138,6 +140,114 @@ class ScoreAnalysis(object):
 
     def get_analysis(self):
         return {key: self.get_text(key) for key in self._scores.keys()}
+
+def normalize_header(header_row):
+    """Normalize headers to string and strip whitespace."""
+    return [str(cell.value).strip() if cell.value is not None else "" for cell in header_row]
+
+def load_source_data(filepath):
+    print(f"Loading source data from: {filepath}")
+    if not os.path.exists(filepath):
+        print(f"Error: File '{filepath}' not found.")
+        sys.exit(1)
+
+    wb = openpyxl.load_workbook(filepath, data_only=True)
+    sheet = wb.active
+    
+    # Get headers from first row
+    headers = normalize_header(sheet[1])
+    
+    # Define required and optional columns
+    required_cols = {'学号'}
+    score_cols = ['客观分', '主观分', '成绩']
+    
+    # Check if '学号' exists
+    if '学号' not in headers:
+        print("Error: Column '学号' not found in source file.")
+        sys.exit(1)
+        
+    col_indices = {}
+    col_indices['学号'] = headers.index('学号')
+    
+    for col in score_cols:
+        if col in headers:
+            col_indices[col] = headers.index(col)
+        else:
+            print(f"Warning: Column '{col}' not found in source file. It will be skipped.")
+    
+    data = {}
+    # Iterate rows starting from row 2
+    for row in sheet.iter_rows(min_row=2, values_only=True):
+        # row is a tuple of values
+        try:
+            student_id = str(row[col_indices['学号']]).strip()
+            if not student_id or student_id == 'None':
+                continue
+                
+            entry = {}
+            for col_name in score_cols:
+                if col_name in col_indices:
+                    entry[col_name] = row[col_indices[col_name]]
+            
+            data[student_id] = entry
+        except IndexError:
+            continue
+            
+    print(f"Loaded {len(data)} records from source file.")
+    return data
+
+def merge_to_target(target_path, data, output_path=None):
+    print(f"Merging into target: {target_path}")
+    if not os.path.exists(target_path):
+        print(f"Error: File '{target_path}' not found.")
+        sys.exit(1)
+
+    wb = openpyxl.load_workbook(target_path)
+    sheet = wb.active
+    
+    # Get headers from target
+    headers = [str(cell.value).strip() if cell.value is not None else "" for cell in sheet[1]]
+    
+    if '学号' not in headers:
+        print("Error: Column '学号' not found in target file.")
+        sys.exit(1)
+    
+    id_col_idx = headers.index('学号') + 1 # 1-based index for cell access
+    
+    # Score columns to update
+    score_cols = ['客观分', '主观分', '成绩']
+    col_map = {}
+    
+    # Find or create columns in target
+    for col_name in score_cols:
+        if col_name in headers:
+            col_map[col_name] = headers.index(col_name) + 1
+        else:
+            new_col_idx = len(headers) + 1
+            sheet.cell(row=1, column=new_col_idx, value=col_name)
+            headers.append(col_name)
+            col_map[col_name] = new_col_idx
+            print(f"Added new column '{col_name}' to target file.")
+
+    count = 0
+    # Update rows
+    for row_idx, row in enumerate(sheet.iter_rows(min_row=2), start=2):
+        # Access student ID cell
+        id_cell = sheet.cell(row=row_idx, column=id_col_idx)
+        student_id = str(id_cell.value).strip()
+        
+        if student_id in data:
+            record = data[student_id]
+            for col_name, val in record.items():
+                target_col_idx = col_map[col_name]
+                sheet.cell(row=row_idx, column=target_col_idx, value=val)
+            count += 1
+            
+    out_file = output_path if output_path else target_path
+    wb.save(out_file)
+    print(f"Successfully updated {count} records.")
+    print(f"Saved result to: {out_file}")
+
 
 def split_ranking(data, col_sub, col_rank):
     """Split scores into two categories according to whether it is ranked online."""

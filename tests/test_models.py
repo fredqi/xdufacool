@@ -2,31 +2,46 @@ from datetime import datetime
 import yaml
 import os
 import pytest
+from pathlib import Path
 from xdufacool.models import Teacher, Student, Course, Assignment, ReportAssignment, CodingAssignment, ChallengeAssignment, Submission, ReportSubmission, CodingSubmission, ChallengeSubmission
 
 @pytest.fixture
-def setup_data():
+def setup_data(tmp_path):
     # Create dummy data for testing
     teacher1 = Teacher("T001", "Dr. Smith", "smith@example.com", "Computer Science")
     teacher2 = Teacher("T002", "Dr. Jones", "jones@example.com", "Electrical Engineering")
     student1 = Student("S001", "Alice", "alice@example.com", "Computer Science")
     student2 = Student("S002", "Bob", "bob@example.com", "Electrical Engineering")
 
+    start_date = datetime(2024, 9, 1)
+    end_date = datetime(2025, 1, 15)
+    
+    # Create dummy files for CodingAssignment
+    exercise_dir = tmp_path / "exercise" / "Code1"
+    exercise_dir.mkdir(parents=True, exist_ok=True)
+    (exercise_dir / "env_template.yml").touch()
+    (exercise_dir / "notebook.ipynb").touch()
+    (exercise_dir / "data.csv").touch()
+    (exercise_dir / "figure.png").touch()
+
     course = Course(
         course_id="CS101",
         abbreviation="MLEN",
         topic="Machine Learning",
-        semester="Fall 2024",
+        # semester="Fall 2024",
         teachers=[teacher1, teacher2],
-        teaching_plan="Some plan...",
-        course_year=2024,
-        start_date=datetime(2024, 9, 1)
+        teaching_hours=32,
+        credits=2.0,
+        start_date=start_date,
+        end_date=end_date,
+        base_dir=tmp_path
     )
 
     assignment = Assignment(
         assignment_id="A001",
         course=course,
         title="Assignment 1",
+        alias="nonimal-name",
         description="First assignment",
         due_date=datetime(2024, 9, 15)
     )
@@ -35,6 +50,7 @@ def setup_data():
         assignment_id="R001",
         course=course,
         title="Report Assignment 1",
+        alias="Report1",
         description="First report assignment",
         due_date=datetime(2024, 9, 20),
         instructions="Write a report..."
@@ -44,19 +60,20 @@ def setup_data():
         assignment_id="C001",
         course=course,
         title="Coding Assignment 1",
+        alias="Code1",
         description="First coding assignment",
         due_date=datetime(2024, 9, 25),
         environment_template="env_template.yml",
         notebook={'source': 'notebook.ipynb', 'additional_cells': []},
         data=["data.csv"],
-        figures=["figure.png"],
-        assignment_folder="coding_assignment_folder"
+        figures=["figure.png"]
     )
 
     challenge_assignment = ChallengeAssignment(
         assignment_id="CH001",
         course=course,
         title="Challenge Assignment 1",
+        alias="Challenge1",
         description="First challenge assignment",
         due_date=datetime(2024, 9, 30),
         evaluation_metric="Accuracy"
@@ -109,9 +126,8 @@ def test_course_creation(setup_data):
     assert course.course_id == "CS101"
     assert course.abbreviation == "MLEN"
     assert course.topic == "Machine Learning"
-    assert course.semester == "Fall 2024"
+    assert course.semester == "2024-2025学年第一学期"
     assert len(course.teachers) == 2
-    assert course.teaching_plan == "Some plan..."
     assert course.course_year == 2024
     assert course.start_date == datetime(2024, 9, 1)
 
@@ -120,7 +136,7 @@ def test_add_assignment(setup_data):
     assignment = setup_data["assignment"]
     course.add_assignment(assignment)
     assert len(course.assignments) == 1
-    assert course.assignments[0] == assignment
+    assert course.assignments[assignment.assignment_id] == assignment
 
 def test_assignment_creation(setup_data):
     assignment = setup_data["assignment"]
@@ -164,7 +180,7 @@ def test_coding_assignment_creation(setup_data):
     assert coding_assignment.notebook == {'source': 'notebook.ipynb', 'additional_cells': []}
     assert coding_assignment.data == ["data.csv"]
     assert coding_assignment.figures == ["figure.png"]
-    assert coding_assignment.assignment_folder == "coding_assignment_folder"
+    assert coding_assignment.dirs['exercise'].name == "Code1"
 
 def test_challenge_assignment_creation(setup_data):
     challenge_assignment = setup_data["challenge_assignment"]
