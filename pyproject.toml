@@ -21,6 +21,7 @@ classifiers = [
   "Programming Language :: Python :: 3.8",
 ]
 dependencies = [
+  "arxiv-latex-cleaner",
   "dotenv",
   "jinja2",
   "mistletoe",
@@ -55,6 +56,7 @@ homepage = "https://github.com/fredqi/xdufacool"
 [project.scripts]
 xdufacool = "xdufacool.cli:main"
 dupcheck = "xdufacool.dupcheck:main"
+subprep = "xdufacool.subprep:main"
 # pdf2pptx = "xdufacool.pdf2pptx:pdf2pptx"
 # syllabus = "xdufacool.syllabus:syllabus_helper"
 # xduscore = "xdufacool.score_helper:xduscore"

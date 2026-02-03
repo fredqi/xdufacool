@@ -49,10 +49,20 @@ class PDFCompiler:
             logging.debug(f"Current working directory: {original_cwd}=>{output_dir}")
             logging.debug(f"Compiling {basename} with {self.compiler}")
 
+            # Configure command and runs based on compiler
+            cmd = [self.compiler]
+            runs = self.max_runs
+            
+            if 'latexmk' in self.compiler:
+                cmd.append('-pdf')
+                runs = 1  # latexmk handles reruns internally
+            
+            cmd.extend(['-interaction=nonstopmode', '-halt-on-error', tex_file])
+
             # Compile multiple times for TOC/references
-            for i in range(self.max_runs):
+            for i in range(runs):
                 result = subprocess.run(
-                    [self.compiler, '-interaction=nonstopmode', '-halt-on-error', tex_file],
+                    cmd,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
                     text=True
