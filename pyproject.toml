@@ -7,7 +7,7 @@ name = "xdufacool"
 version = "0.9.0"
 description = "A set of toolkit for faculty members in the Xidian University."
 readme = "README.md"
-requires-python = ">=3.8"
+requires-python = ">=3.9"
 license = {file = "LICENSE"}
 keywords = ["xidian", "university", "faculty", "toolkit"]
 authors = [
@@ -39,6 +39,7 @@ dependencies = [
   "python-docx",
   "tqdm",
   "docx-mailmerge2",
+  "google-genai",
 ]
 
 [project.optional-dependencies]
@@ -57,13 +58,14 @@ homepage = "https://github.com/fredqi/xdufacool"
 xdufacool = "xdufacool.cli:main"
 dupcheck = "xdufacool.dupcheck:main"
 subprep = "xdufacool.subprep:main"
+beamer-translate = "xdufacool.beamer_translate:main"
 # pdf2pptx = "xdufacool.pdf2pptx:pdf2pptx"
 # syllabus = "xdufacool.syllabus:syllabus_helper"
 # xduscore = "xdufacool.score_helper:xduscore"
 # arxort = "xdufacool.organize_bib:organize_bib"
 
 [tool.setuptools]
-packages = ["xdufacool"]
+packages = ["xdufacool", "xdufacool.beamer"]
 include-package-data = true
 
 [tool.setuptools.package-data]
