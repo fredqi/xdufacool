@@ -26,6 +26,7 @@ pysocks = "*"
 pygments = "*"
 python-docx = "*"
 tqdm = "*"
+rich = "*"
 docx-mailmerge2 = "*"
 google-genai = "*"
 xdufacool = { path = ".", editable = true }

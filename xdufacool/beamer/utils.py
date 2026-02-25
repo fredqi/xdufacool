@@ -93,15 +93,17 @@ def batch_frames(
 
 
 def default_output_path(input_path: Path) -> Path:
-    """Derive the default output path by inserting ``.zh`` before the extension.
+    """Derive the default output path by inserting ``-zh`` before the extension.
 
     Args:
         input_path: Original ``.tex`` file path.
 
     Returns:
-        E.g. ``slides.tex`` → ``slides.zh.tex``.
+        E.g. ``slides.tex`` → ``slides-zh.tex``.
     """
-    return input_path.with_suffix(".zh.tex")
+    stem = input_path.stem
+    suffix = input_path.suffix
+    return input_path.parent / f"{stem}-zh{suffix}"
 
 
 def write_output(text: str, output_path: Path) -> None:

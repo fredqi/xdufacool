@@ -48,7 +48,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--output",
         type=Path,
         default=None,
-        help="Output file path (default: <input>.zh.tex).",
+        help="Output file path (default: <input>-zh.tex).",
     )
     parser.add_argument(
         "--preamble-template",
@@ -95,12 +95,38 @@ def build_parser() -> argparse.ArgumentParser:
 # ── Logging setup ───────────────────────────────────────────────────────────
 
 def _configure_logging(verbose: bool = False) -> None:
+    """Configure logging to file with optional verbose output.
+    
+    Logs are written to beamer-translate.log. Verbose mode increases detail level.
+    HTTP library logging is suppressed to keep logs clean.
+    """
     level = logging.DEBUG if verbose else logging.INFO
-    logging.basicConfig(
-        level=level,
-        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-        datefmt="%H:%M:%S",
+    log_format = "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+    date_format = "%H:%M:%S"
+    
+    # Configure root logger
+    root_logger = logging.getLogger()
+    root_logger.setLevel(level)
+    
+    # Add file handler (logs to file)
+    file_handler = logging.FileHandler("beamer-translate.log", encoding="utf-8")
+    file_handler.setLevel(level)
+    file_formatter = logging.Formatter(log_format, datefmt=date_format)
+    file_handler.setFormatter(file_formatter)
+    root_logger.addHandler(file_handler)
+    
+    # Add console handler (only warnings/errors to console)
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(logging.WARNING)
+    console_formatter = logging.Formatter(
+        "[%(levelname)s] %(message)s"
     )
+    console_handler.setFormatter(console_formatter)
+    root_logger.addHandler(console_handler)
+    
+    # Suppress verbose HTTP library logging
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("google.genai").setLevel(logging.WARNING)
 
 
 # ── Pipeline ────────────────────────────────────────────────────────────────

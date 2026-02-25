@@ -162,10 +162,10 @@ class TestBatchFrames:
 
 class TestDefaultOutputPath:
     def test_adds_zh_suffix(self) -> None:
-        assert default_output_path(Path("slides.tex")) == Path("slides.zh.tex")
+        assert default_output_path(Path("slides.tex")) == Path("slides-zh.tex")
 
     def test_handles_compound_suffix(self) -> None:
-        assert default_output_path(Path("dir/a.b.tex")) == Path("dir/a.b.zh.tex")
+        assert default_output_path(Path("dir/a.b.tex")) == Path("dir/a.b-zh.tex")
 
 
 # ── CLI / beamer_translate tests ────────────────────────────────────────────
