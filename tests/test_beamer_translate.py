@@ -11,8 +11,9 @@ from xdufacool.beamer.latex_parser import (
     parse_beamer_tex,
     read_and_parse,
     reconstruct,
+    load_preamble_template,
 )
-from xdufacool.beamer.utils import batch_frames, default_output_path, estimate_tokens
+from xdufacool.beamer.utils import batch_frames, default_output_path, estimate_tokens, strip_latex_comments
 
 
 # ── Fixtures ────────────────────────────────────────────────────────────────
@@ -118,7 +119,7 @@ class TestReconstruct:
 
     def test_raises_on_count_mismatch(self) -> None:
         doc = parse_beamer_tex(SAMPLE_TEX)
-        with pytest.raises(ValueError, match="Frame count mismatch"):
+        with pytest.raises(ValueError, match="Content item count mismatch"):
             reconstruct(doc, doc.frames[:2])
 
 
@@ -232,3 +233,86 @@ class TestCLITranslation:
         assert r"\documentclass{beamer}" in content
         assert r"\end{document}" in content
         assert "简介" in content
+
+
+# ── Tests for new features ──────────────────────────────────────────────────
+
+
+class TestStripLatexComments:
+    """Tests for comment stripping functionality."""
+
+    def test_strips_whole_line_comments(self) -> None:
+        text = "Line 1\n% This is a comment\nLine 2"
+        result = strip_latex_comments(text)
+        assert "% This is a comment" not in result
+        assert "Line 1" in result
+        assert "Line 2" in result
+
+    def test_preserves_inline_comments(self) -> None:
+        text = "Some text % inline comment"
+        result = strip_latex_comments(text)
+        # Inline comments are preserved (only whole-line comments are stripped)
+        assert "Some text % inline comment" in result
+
+    def test_preserves_empty_lines(self) -> None:
+        text = "Line 1\n\nLine 2"
+        result = strip_latex_comments(text)
+        assert result == text
+
+
+class TestSectionExtraction:
+    """Tests for section/subsection extraction."""
+
+    def test_extracts_sections_and_frames(self) -> None:
+        tex_with_sections = textwrap.dedent(r"""
+        \documentclass{beamer}
+        \begin{document}
+        
+        \section{Introduction}
+        
+        \begin{frame}{First}
+          Content
+        \end{frame}
+        
+        \subsection{Details}
+        
+        \begin{frame}{Second}
+          More content
+        \end{frame}
+        
+        \end{document}
+        """).lstrip()
+        
+        doc = parse_beamer_tex(tex_with_sections)
+        # Should have 2 frames + 2 section commands = 4 content items
+        assert len(doc.content_items) == 4
+        assert len(doc.frames) == 2  # Only frames via the property
+        
+        # Check that sections are included
+        sections = [item for item in doc.content_items if 'section' in item and not item.startswith(r'\begin{frame}')]
+        assert len(sections) == 2
+
+
+class TestPreambleTemplate:
+    """Tests for preamble template loading."""
+
+    def test_loads_preamble_from_file(self, tmp_path: Path) -> None:
+        template = tmp_path / "preamble.tex"
+        template.write_text(r"\documentclass{beamer}" + "\n" + r"\usepackage{custom}", encoding="utf-8")
+        
+        loaded = load_preamble_template(template)
+        assert r"\documentclass{beamer}" in loaded
+        assert r"\usepackage{custom}" in loaded
+
+    def test_raises_on_missing_template(self, tmp_path: Path) -> None:
+        with pytest.raises(FileNotFoundError):
+            load_preamble_template(tmp_path / "nonexistent.tex")
+
+    def test_reconstruct_with_preamble_override(self) -> None:
+        doc = parse_beamer_tex(SAMPLE_TEX)
+        custom_preamble = r"\documentclass{article}" + "\n"
+        
+        result = reconstruct(doc, doc.content_items, preamble_override=custom_preamble)
+        assert r"\documentclass{article}" in result
+        assert r"\documentclass{beamer}" not in result
+        assert r"\end{document}" in result

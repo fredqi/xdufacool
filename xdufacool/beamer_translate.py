@@ -15,8 +15,8 @@ from typing import List, Optional, Sequence
 
 from tqdm import tqdm
 
-from .beamer.gemini_client import DEFAULT_MODEL, GeminiTranslator
-from .beamer.latex_parser import BeamerDocument, read_and_parse, reconstruct
+from .beamer.gemini_client import DEFAULT_MODEL, RECOMMENDED_MODELS, GeminiTranslator
+from .beamer.latex_parser import BeamerDocument, read_and_parse, reconstruct, load_preamble_template
 from .beamer.utils import batch_frames, default_output_path, write_output
 
 logger = logging.getLogger(__name__)
@@ -36,6 +36,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "input",
         type=Path,
+        nargs="?",
         help="Path to the input .tex file.",
     )
     parser.add_argument(
@@ -46,10 +47,21 @@ def build_parser() -> argparse.ArgumentParser:
         help="Output file path (default: <input>.zh.tex).",
     )
     parser.add_argument(
+        "--preamble-template",
+        type=Path,
+        default=None,
+        help="Optional preamble template file to replace the original preamble.",
+    )
+    parser.add_argument(
         "--model",
         type=str,
         default=DEFAULT_MODEL,
         help=f"Gemini model name (default: {DEFAULT_MODEL}).",
+    )
+    parser.add_argument(
+        "--list-models",
+        action="store_true",
+        help="List available Gemini models and exit.",
     )
     parser.add_argument(
         "--batch-size",
@@ -98,20 +110,20 @@ def translate_pipeline(
 
     Args:
         doc: Parsed Beamer document (used only for metadata here).
-        batches: Pre-computed frame batches.
+        batches: Pre-computed content item batches.
         translator: Initialised ``GeminiTranslator`` instance.
 
     Returns:
-        Flat list of translated frame strings (same order as
-        ``doc.frames``).
+        Flat list of translated content item strings (same order as
+        ``doc.content_items``).
     """
     translated: List[str] = []
-    total_frames = sum(len(b) for b in batches)
+    total_items = sum(len(b) for b in batches)
 
-    with tqdm(total=total_frames, desc="Translating", unit="frame") as pbar:
+    with tqdm(total=total_items, desc="Translating", unit="item") as pbar:
         for batch_idx, batch in enumerate(batches, 1):
             logger.info(
-                "Processing batch %d/%d (%d frame(s)).",
+                "Processing batch %d/%d (%d item(s)).",
                 batch_idx,
                 len(batches),
                 len(batch),
@@ -139,7 +151,34 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
     _configure_logging(args.verbose)
 
-    # ── 1. Parse input ──────────────────────────────────────────────────
+    # ── 0. Handle --list-models ─────────────────────────────────────────
+    if args.list_models:
+        try:
+            translator = GeminiTranslator(model_name=DEFAULT_MODEL, validate_model=False)
+            models = translator.list_available_models()
+            if models:
+                logger.info("Available Gemini 2.0+ models:")
+                for model in models:
+                    print(f"  - {model}")
+                return 0
+            else:
+                logger.warning("Could not retrieve model list from API.")
+                logger.info("Recommended models: %s", ", ".join(RECOMMENDED_MODELS))
+                return 0
+        except EnvironmentError as exc:
+            logger.error("%s", exc)
+            return 1
+        except Exception as exc:
+            logger.error("Failed to list models: %s", exc)
+            return 1
+
+    # ── 1. Validate input argument ──────────────────────────────────────
+    if not args.input:
+        logger.error("Error: input file is required (unless using --list-models)")
+        parser.print_help()
+        return 1
+
+    # ── 2. Parse input ──────────────────────────────────────────────────
     input_path: Path = args.input
     output_path: Path = args.output or default_output_path(input_path)
 
@@ -158,14 +197,23 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         input_path,
     )
 
-    # ── 2. Batch frames ────────────────────────────────────────────────
+    # ── 3. Load preamble template (if provided) ────────────────────────
+    preamble_override = None
+    if args.preamble_template:
+        try:
+            preamble_override = load_preamble_template(args.preamble_template)
+        except FileNotFoundError as exc:
+            logger.error("%s", exc)
+            return 1
+
+    # ── 4. Batch content items ──────────────────────────────────────────
     batches = batch_frames(
-        doc.frames,
+        doc.content_items,
         batch_size=args.batch_size,
         max_tokens=args.max_tokens,
     )
     logger.info(
-        "Frames grouped into %d batch(es) (batch_size=%d, max_tokens=%d).",
+        "Content items grouped into %d batch(es) (batch_size=%d, max_tokens=%d).",
         len(batches),
         args.batch_size,
         args.max_tokens,
@@ -174,7 +222,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     if args.dry_run:
         for i, batch in enumerate(batches, 1):
             logger.info(
-                "  Batch %d: %d frame(s), ~%d chars.",
+                "  Batch %d: %d item(s), ~%d chars.",
                 i,
                 len(batch),
                 sum(len(f) for f in batch),
@@ -182,7 +230,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         logger.info("Dry-run complete. No API calls made.")
         return 0
 
-    # ── 3. Translate ────────────────────────────────────────────────────
+    # ── 5. Translate ────────────────────────────────────────────────────
     try:
         translator = GeminiTranslator(
             model_name=args.model,
@@ -192,14 +240,14 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         return 1
 
     try:
-        translated_frames = translate_pipeline(doc, batches, translator)
+        translated_items = translate_pipeline(doc, batches, translator)
     except RuntimeError as exc:
         logger.error("Translation failed: %s", exc)
         return 1
 
-    # ── 4. Reconstruct & write ──────────────────────────────────────────
+    # ── 6. Reconstruct & write ──────────────────────────────────────────
     try:
-        full_text = reconstruct(doc, translated_frames)
+        full_text = reconstruct(doc, translated_items, preamble_override=preamble_override)
     except ValueError as exc:
         logger.error("Reconstruction failed: %s", exc)
         return 1

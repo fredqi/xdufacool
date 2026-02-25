@@ -7,13 +7,18 @@ import re
 import logging
 from pathlib import Path
 from dataclasses import dataclass, field
-from typing import List, Tuple
+from typing import List, Tuple, Optional, Union
 
 logger = logging.getLogger(__name__)
 
 # Regex to match \begin{frame}...\end{frame} blocks (DOTALL for multiline).
 _FRAME_PATTERN = re.compile(
     r"(\\begin\{frame\}.*?\\end\{frame\})", re.DOTALL
+)
+
+# Regex to match section/subsection commands.
+_SECTION_PATTERN = re.compile(
+    r"(\\(?:sub)?section\*?\{[^}]*\})"
 )
 
 
@@ -23,52 +28,80 @@ class BeamerDocument:
 
     Attributes:
         preamble: Everything before the first ``\\begin{frame}``.
-        frames: Ordered list of frame blocks (including delimiters).
-        tail: Everything after the last ``\\end{frame}`` (includes
+        content_items: Ordered list of frames and sections/subsections.
+            Each item is either a frame string or a section/subsection command.
+        tail: Everything after the last frame/section (includes
             ``\\end{document}``).
         source_path: Original file path, if available.
     """
 
     preamble: str
-    frames: List[str]
+    content_items: List[str]
     tail: str
     source_path: Path | None = None
 
+    @property
+    def frames(self) -> List[str]:
+        """Return only frame items for backward compatibility."""
+        return [item for item in self.content_items if item.strip().startswith('\\begin{frame}')]
+
 
 def parse_beamer_tex(text: str, source_path: Path | None = None) -> BeamerDocument:
-    """Parse a LaTeX Beamer file into preamble, frames, and tail.
+    """Parse a LaTeX Beamer file into preamble, content items, and tail.
 
     Args:
         text: Full LaTeX source text.
         source_path: Optional path used for logging purposes.
 
     Returns:
-        A ``BeamerDocument`` with the three structural parts.
+        A ``BeamerDocument`` with preamble, content_items (frames and sections), and tail.
 
     Raises:
         ValueError: If no ``\\begin{frame}`` blocks are found.
     """
-    frames = _FRAME_PATTERN.findall(text)
-    if not frames:
+    # Find all frames and sections/subsections with their positions
+    items = []
+    
+    # Find frames
+    for match in _FRAME_PATTERN.finditer(text):
+        items.append((match.start(), match.end(), match.group(0), 'frame'))
+    
+    # Find section/subsection commands
+    for match in _SECTION_PATTERN.finditer(text):
+        items.append((match.start(), match.end(), match.group(0), 'section'))
+    
+    if not items:
         raise ValueError(
             f"No \\begin{{frame}} blocks found"
             f"{f' in {source_path}' if source_path else ''}."
         )
-
-    first_start = text.index(frames[0])
-    last_end = text.rindex(frames[-1]) + len(frames[-1])
-
+    
+    # Sort by position in document
+    items.sort(key=lambda x: x[0])
+    
+    # Extract preamble (everything before first item)
+    first_start = items[0][0]
     preamble = text[:first_start]
+    
+    # Extract tail (everything after last item)
+    last_end = items[-1][1]
     tail = text[last_end:]
-
+    
+    # Extract content items in order
+    content_items = [item[2] for item in items]
+    
+    frame_count = sum(1 for item in items if item[3] == 'frame')
+    section_count = sum(1 for item in items if item[3] == 'section')
+    
     logger.info(
-        "Parsed %d frame(s) from %s.",
-        len(frames),
+        "Parsed %d frame(s) and %d section/subsection(s) from %s.",
+        frame_count,
+        section_count,
         source_path or "<string>",
     )
     return BeamerDocument(
         preamble=preamble,
-        frames=frames,
+        content_items=content_items,
         tail=tail,
         source_path=source_path,
     )
@@ -94,24 +127,47 @@ def read_and_parse(filepath: Path) -> BeamerDocument:
     return parse_beamer_tex(text, source_path=filepath)
 
 
-def reconstruct(doc: BeamerDocument, translated_frames: List[str]) -> str:
-    """Rebuild the full LaTeX source from translated frames.
+def reconstruct(doc: BeamerDocument, translated_items: List[str], preamble_override: Optional[str] = None) -> str:
+    """Rebuild the full LaTeX source from translated content items.
 
     Args:
         doc: The original parsed document (preamble/tail are reused).
-        translated_frames: Translated frame strings (same count as
-            ``doc.frames``).
+        translated_items: Translated content items (frames and sections, same count as
+            ``doc.content_items``).
+        preamble_override: Optional preamble to use instead of doc.preamble.
 
     Returns:
         Complete LaTeX source text ready to be written to disk.
 
     Raises:
-        ValueError: If the number of translated frames does not match
+        ValueError: If the number of translated items does not match
             the original.
     """
-    if len(translated_frames) != len(doc.frames):
+    if len(translated_items) != len(doc.content_items):
         raise ValueError(
-            f"Frame count mismatch: expected {len(doc.frames)}, "
-            f"got {len(translated_frames)}."
+            f"Content item count mismatch: expected {len(doc.content_items)}, "
+            f"got {len(translated_items)}."
         )
-    return doc.preamble + "\n".join(translated_frames) + doc.tail
+    
+    preamble = preamble_override if preamble_override is not None else doc.preamble
+    return preamble + "\n".join(translated_items) + doc.tail
+
+
+def load_preamble_template(template_path: Path) -> str:
+    """Load a preamble template from an external file.
+
+    Args:
+        template_path: Path to the preamble template file.
+
+    Returns:
+        Preamble text from the template.
+
+    Raises:
+        FileNotFoundError: If template file does not exist.
+    """
+    template_path = Path(template_path)
+    if not template_path.exists():
+        raise FileNotFoundError(f"Preamble template not found: {template_path}")
+    preamble = template_path.read_text(encoding="utf-8")
+    logger.info("Loaded preamble template from %s (%d chars).", template_path, len(preamble))
+    return preamble

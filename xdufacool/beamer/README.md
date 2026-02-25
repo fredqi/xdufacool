@@ -5,8 +5,11 @@ A production-quality CLI tool for translating LaTeX Beamer slide decks from Engl
 ## Features
 
 - **LaTeX Structure Preservation**: Strictly preserves all LaTeX syntax, commands, math expressions, and formatting
-- **Intelligent Batching**: Groups frames to optimize API usage while respecting token limits
-- **Robust Validation**: Ensures output frame count matches input with automatic retry
+- **Section/Subsection Translation**: Translates `\section` and `\subsection` titles outside frames
+- **Comment Stripping**: Removes whole-line comments before API calls to reduce token usage and costs
+- **Preamble Template Support**: Optionally replace the original preamble with a custom template
+- **Intelligent Batching**: Groups content items to optimize API usage while respecting token limits
+- **Robust Validation**: Ensures output count matches input with automatic retry
 - **Progress Tracking**: Uses tqdm for visual progress feedback
 - **Dry-run Mode**: Preview batching strategy without API calls
 
@@ -15,8 +18,8 @@ A production-quality CLI tool for translating LaTeX Beamer slide decks from Engl
 The tool is part of the `xdufacool` package:
 
 ```bash
-uv sync
-# or
+pixi install
+# or for development
 pip install -e .
 ```
 
@@ -42,8 +45,10 @@ beamer-translate slides.tex
 
 This will:
 - Read `slides.tex`
+- Extract frames and section/subsection commands
+- Strip whole-line comments from content
 - Translate English text to Chinese
-- Output to `slides.zh.tex`
+- Output to `slides-zh.tex`
 
 ### Options
 
@@ -55,23 +60,34 @@ beamer-translate INPUT [-o OUTPUT] [OPTIONS]
 - `INPUT`: Path to input .tex file
 
 **Optional Arguments:**
-- `-o, --output PATH`: Output file path (default: `<input>.zh.tex`)
-- `--model NAME`: Gemini model name (default: `gemini-2.5-pro`)
-- `--batch-size N`: Max frames per API request (default: 3)
+- `-o, --output PATH`: Output file path (default: `<input>-zh.tex`)
+- `--preamble-template PATH`: Optional preamble template file to replace the original
+- `--model NAME`: Gemini model name (default: `gemini-3-flash-preview`)
+- `--batch-size N`: Max items per API request (default: 3)
 - `--max-tokens N`: Soft token limit per batch (default: 20000)
 - `--verbose`: Enable DEBUG logging
 - `--dry-run`: Parse and batch without calling API
 
 ### Examples
 
+**Basic translation:**
+```bash
+beamer-translate lecture-01.tex
+```
+
+**Use custom preamble template:**
+```bash
+beamer-translate lecture-01.tex --preamble-template custom-preamble.tex
+```
+
 **Specify output file:**
 ```bash
-beamer-translate lecture-01.tex -o lecture-01-zh.tex
+beamer-translate lecture-02.tex -o lecture-02-zh.tex
 ```
 
 **Use smaller batches for complex slides:**
 ```bash
-beamer-translate lecture-02.tex --batch-size 2
+beamer-translate lecture-03.tex --batch-size 2
 ```
 
 **Preview batching strategy:**
@@ -86,11 +102,12 @@ beamer-translate slides.tex --model gemini-2.0-flash-exp
 
 ## How It Works
 
-1. **Parsing**: Extracts preamble, frame blocks, and document tail
-2. **Batching**: Groups frames respecting `--batch-size` and `--max-tokens`
-3. **Translation**: Sends batches to Gemini API with strict LaTeX preservation instructions
-4. **Validation**: Verifies frame count matches (retries up to 2 times on mismatch)
-5. **Reconstruction**: Reassembles document with translated frames
+1. **Parsing**: Extracts preamble, content items (frames and sections), and document tail
+2. **Comment Stripping**: Removes whole-line LaTeX comments from content items
+3. **Batching**: Groups content items respecting `--batch-size` and `--max-tokens`
+4. **Translation**: Sends batches to Gemini API with strict LaTeX preservation instructions
+5. **Validation**: Verifies item count matches (retries up to 2 times on mismatch)
+6. **Reconstruction**: Reassembles document with translated content (and optional custom preamble)
 
 ## Translation Rules
 
@@ -98,11 +115,12 @@ The system instruction ensures:
 
 ✅ **Translated:**
 - Human-readable English text
-- Comments and explanations
+- Section and subsection titles
 - Slide titles and content
+- Comments (inline comments are preserved, whole-line comments are stripped before API call)
 
 ❌ **Never Modified:**
-- LaTeX commands (`\begin`, `\end`, `\item`, etc.)
+- LaTeX commands themselves (`\begin`, `\end`, `\item`, `\section`, etc.)
 - Math expressions (`$...$`, `\[...\]`, equations)
 - Labels, refs, citations
 - URLs and file paths
@@ -114,13 +132,15 @@ The system instruction ensures:
 ```
 xdufacool/beamer/
 ├── __init__.py
-├── latex_parser.py      # Parse .tex into preamble/frames/tail
-├── utils.py             # Batching, token estimation, I/O
+├── latex_parser.py      # Parse .tex into preamble/content_items/tail
+│                        # Extract frames and section/subsection commands
+│                        # Support preamble template loading
+├── utils.py             # Batching, token estimation, comment stripping, I/O
 ├── gemini_client.py     # API client with retry & validation
 └── README.md            # This file
 
-xdufacool/beamer_translate.py  # CLI entry-point
-tests/test_beamer_translate.py # Comprehensive test suite
+xdufacool/beamer_translate.py  # CLI entry-point with preamble template support
+tests/test_beamer_translate.py # Comprehensive test suite (30 tests)
 ```
 
 ## Testing
@@ -128,11 +148,14 @@ tests/test_beamer_translate.py # Comprehensive test suite
 Run the test suite:
 
 ```bash
-uv run pytest tests/test_beamer_translate.py -v
+pixi run python -m pytest tests/test_beamer_translate.py -v
 ```
 
 Tests cover:
-- LaTeX parsing and reconstruction
+- LaTeX parsing and reconstruction (frames + sections)
+- Comment stripping functionality
+- Section/subsection extraction
+- Preamble template loading
 - Batching algorithms
 - CLI argument handling
 - Dry-run mode
@@ -146,26 +169,41 @@ EnvironmentError: Gemini API key not found
 ```
 → Ensure `GEMINI_API_KEY` is set in your environment.
 
-**Frame Count Mismatch:**
+**Content Item Count Mismatch:**
 ```
-RuntimeError: Frame count validation failed after 3 attempt(s)
+RuntimeError: Item count validation failed after 3 attempt(s)
 ```
-→ The API output didn't match expected frame count. Try:
+→ The API output didn't match expected item count. Try:
 - Reducing `--batch-size`
 - Using a more capable model
 - Checking for complex LaTeX that confuses the model
+
+**Preamble Template Not Found:**
+```
+FileNotFoundError: Preamble template not found: custom.tex
+```
+→ Verify the template file path is correct.
 
 **Import Error:**
 ```
 ImportError: cannot import name 'genai' from 'google'
 ```
-→ Run `uv sync` to ensure `google-genai` is installed.
+→ Run `pixi install` to ensure `google-genai` is installed.
 
 ## Known Limitations
 
 - Requires valid LaTeX input with well-formed `\begin{frame}...\end{frame}` blocks
+- Only whole-line comments (lines starting with `%`) are stripped; inline comments are preserved
+- Section/subsection commands must use standard syntax: `\section{...}`, `\subsection{...}`, `\section*{...}`
 - Very complex nested environments may occasionally confuse the LLM
 - Token estimation is approximate (assumes 4 chars/token)
+
+## Recent Improvements (v0.9.0)
+
+1. **Comment Stripping**: Whole-line LaTeX comments are now removed before API calls, reducing token usage and costs
+2. **Section Translation**: `\section` and `\subsection` commands outside frames are now translated
+3. **Preamble Templates**: Custom preamble templates can be loaded via `--preamble-template`
+4. **Better Content Handling**: Parser now extracts both frames and structural commands in document order
 
 ## Migration from Deprecated SDK
 

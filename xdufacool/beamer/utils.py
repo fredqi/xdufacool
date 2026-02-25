@@ -14,6 +14,27 @@ logger = logging.getLogger(__name__)
 _CHARS_PER_TOKEN = 4
 
 
+def strip_latex_comments(text: str) -> str:
+    """Remove whole-line LaTeX comments (lines starting with %).
+
+    Args:
+        text: LaTeX source text.
+
+    Returns:
+        Text with comment-only lines removed. Inline comments and
+        escaped % characters are preserved.
+    """
+    lines = text.split('\n')
+    filtered = []
+    for line in lines:
+        stripped = line.lstrip()
+        # Skip lines that start with % (whole-line comments)
+        if stripped.startswith('%'):
+            continue
+        filtered.append(line)
+    return '\n'.join(filtered)
+
+
 def estimate_tokens(text: str) -> int:
     """Return a rough token count for *text*.
 
