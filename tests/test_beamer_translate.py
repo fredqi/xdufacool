@@ -92,6 +92,39 @@ class TestParseBeamerTex:
         with pytest.raises(ValueError, match="No .* blocks found"):
             parse_beamer_tex(r"\documentclass{article}\begin{document}\end{document}")
 
+    def test_ignores_commented_out_frames(self) -> None:
+        """Test that frames inside whole-line comments are excluded from parsing."""
+        tex_with_commented_frame = textwrap.dedent(r"""
+        \documentclass{beamer}
+        \begin{document}
+
+        \begin{frame}
+        \frametitle{Real Frame 1}
+        Real content.
+        \end{frame}
+
+        % \begin{frame}
+        % \frametitle{Commented Frame}
+        % This frame is commented out and should be ignored.
+        % \end{frame}
+
+        \begin{frame}
+        \frametitle{Real Frame 2}
+        More real content.
+        \end{frame}
+
+        \end{document}
+        """).lstrip()
+        
+        doc = parse_beamer_tex(tex_with_commented_frame)
+        # Should only find 2 frames, not 3
+        assert len(doc.frames) == 2
+        # Verify the frames are the real ones
+        assert r"\frametitle{Real Frame 1}" in doc.frames[0]
+        assert r"\frametitle{Real Frame 2}" in doc.frames[1]
+        # The commented frame should NOT appear
+        assert all(r"Commented Frame" not in frame for frame in doc.frames)
+
 
 class TestReadAndParse:
     """Tests for ``read_and_parse``."""

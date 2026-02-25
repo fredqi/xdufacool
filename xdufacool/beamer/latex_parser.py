@@ -9,6 +9,8 @@ from pathlib import Path
 from dataclasses import dataclass, field
 from typing import List, Tuple, Optional, Union
 
+from .utils import strip_latex_comments
+
 logger = logging.getLogger(__name__)
 
 # Regex to match \begin{frame}...\end{frame} blocks (DOTALL for multiline).
@@ -61,15 +63,18 @@ def parse_beamer_tex(text: str, source_path: Path | None = None) -> BeamerDocume
     Raises:
         ValueError: If no ``\\begin{frame}`` blocks are found.
     """
+    # Strip whole-line comments before parsing to avoid extracting commented-out frames
+    text_no_comments = strip_latex_comments(text)
+    
     # Find all frames and sections/subsections with their positions
     items = []
     
     # Find frames
-    for match in _FRAME_PATTERN.finditer(text):
+    for match in _FRAME_PATTERN.finditer(text_no_comments):
         items.append((match.start(), match.end(), match.group(0), 'frame'))
     
     # Find section/subsection commands
-    for match in _SECTION_PATTERN.finditer(text):
+    for match in _SECTION_PATTERN.finditer(text_no_comments):
         items.append((match.start(), match.end(), match.group(0), 'section'))
     
     if not items:
@@ -81,13 +86,13 @@ def parse_beamer_tex(text: str, source_path: Path | None = None) -> BeamerDocume
     # Sort by position in document
     items.sort(key=lambda x: x[0])
     
-    # Extract preamble (everything before first item)
+    # Extract preamble (everything before first item in comment-stripped text)
     first_start = items[0][0]
-    preamble = text[:first_start]
+    preamble = text_no_comments[:first_start]
     
-    # Extract tail (everything after last item)
+    # Extract tail (everything after last item in comment-stripped text)
     last_end = items[-1][1]
-    tail = text[last_end:]
+    tail = text_no_comments[last_end:]
     
     # Extract content items in order
     content_items = [item[2] for item in items]
