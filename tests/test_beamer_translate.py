@@ -11,7 +11,7 @@ from xdufacool.beamer.latex_parser import (
     parse_beamer_tex,
     read_and_parse,
     reconstruct,
-    load_preamble_template,
+    load_document_template,
 )
 from xdufacool.beamer.utils import batch_frames, default_output_path, estimate_tokens, strip_latex_comments
 
@@ -76,7 +76,7 @@ class TestParseBeamerTex:
 
     def test_tail_contains_end_document(self) -> None:
         doc = parse_beamer_tex(SAMPLE_TEX)
-        assert r"\end{document}" in doc.tail
+        assert doc.end_document == r"\end{document}"
 
     def test_tail_does_not_contain_frames(self) -> None:
         doc = parse_beamer_tex(SAMPLE_TEX)
@@ -326,20 +326,35 @@ class TestSectionExtraction:
         assert len(sections) == 2
 
 
-class TestPreambleTemplate:
-    """Tests for preamble template loading."""
+class TestDocumentTemplate:
+    """Tests for document template loading."""
 
-    def test_loads_preamble_from_file(self, tmp_path: Path) -> None:
-        template = tmp_path / "preamble.tex"
-        template.write_text(r"\documentclass{beamer}" + "\n" + r"\usepackage{custom}", encoding="utf-8")
-        
-        loaded = load_preamble_template(template)
-        assert r"\documentclass{beamer}" in loaded
-        assert r"\usepackage{custom}" in loaded
+    def test_loads_document_template_from_file(self, tmp_path: Path) -> None:
+        template = tmp_path / "template.tex"
+        template.write_text(
+            "\n".join(
+                [
+                    r"\\documentclass{beamer}",
+                    r"\\usepackage{custom}",
+                    r"\\begin{document}",
+                    r"% body omitted",
+                    r"\\end{document}",
+                    r"% tail content",
+                ]
+            ),
+            encoding="utf-8",
+        )
+
+        loaded = load_document_template(template)
+        assert r"\\documentclass{beamer}" in loaded.preamble
+        assert r"\\usepackage{custom}" in loaded.preamble
+        assert loaded.begin_document == r"\begin{document}"
+        assert loaded.end_document == r"\end{document}"
+        assert r"% tail content" in loaded.tail
 
     def test_raises_on_missing_template(self, tmp_path: Path) -> None:
         with pytest.raises(FileNotFoundError):
-            load_preamble_template(tmp_path / "nonexistent.tex")
+            load_document_template(tmp_path / "nonexistent.tex")
 
     def test_reconstruct_with_preamble_override(self) -> None:
         doc = parse_beamer_tex(SAMPLE_TEX)

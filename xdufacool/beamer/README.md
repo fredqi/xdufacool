@@ -61,7 +61,7 @@ beamer-translate INPUT [-o OUTPUT] [OPTIONS]
 
 **Optional Arguments:**
 - `-o, --output PATH`: Output file path (default: `<input>-zh.tex`)
-- `--preamble-template PATH`: Optional preamble template file to replace the original
+- `--template PATH`: Optional full-document template file to replace preamble/tail
 - `--model NAME`: Gemini model name (default: `gemini-3-flash-preview`)
 - `--batch-size N`: Max items per API request (default: 3)
 - `--max-tokens N`: Soft token limit per batch (default: 20000)
@@ -77,7 +77,7 @@ beamer-translate lecture-01.tex
 
 **Use custom preamble template:**
 ```bash
-beamer-translate lecture-01.tex --preamble-template custom-preamble.tex
+beamer-translate lecture-01.tex --template custom-template.tex
 ```
 
 **Specify output file:**
@@ -215,7 +215,7 @@ ImportError: cannot import name 'genai' from 'google'
 
 1. **Comment Stripping**: Whole-line LaTeX comments are now removed before API calls, reducing token usage and costs
 2. **Section Translation**: `\section` and `\subsection` commands outside frames are now translated
-3. **Preamble Templates**: Custom preamble templates can be loaded via `--preamble-template`
+3. **Document Templates**: Full-document templates can be loaded via `--template`
 4. **Better Content Handling**: Parser now extracts both frames and structural commands in document order
 
 ## Migration from Deprecated SDK

@@ -19,7 +19,7 @@ except ImportError:  # pragma: no cover - fallback when rich is unavailable
     from tqdm import tqdm
 
 from .beamer.gemini_client import DEFAULT_MODEL, RECOMMENDED_MODELS, GeminiTranslator
-from .beamer.latex_parser import BeamerDocument, read_and_parse, reconstruct, load_preamble_template
+from .beamer.latex_parser import BeamerDocument, read_and_parse, reconstruct, load_document_template
 from .beamer.utils import batch_frames, default_output_path, write_output
 
 # Load environment variables from .env file if it exists
@@ -54,10 +54,14 @@ def build_parser() -> argparse.ArgumentParser:
         help="Output file path (default: <input>-zh.tex).",
     )
     parser.add_argument(
-        "--preamble-template",
+        "--template",
         type=Path,
         default=None,
-        help="Optional preamble template file to replace the original preamble.",
+        help=(
+            "Optional full-document template file with \\begin{document} and "
+            "\\end{document}. The template preamble/tail are used while the "
+            "translated body is inserted between the document markers."
+        ),
     )
     parser.add_argument(
         "--model",
@@ -226,14 +230,22 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         input_path,
     )
 
-    # ── 3. Load preamble template (if provided) ────────────────────────
-    preamble_override = None
-    if args.preamble_template:
+    # ── 3. Load template (if provided) ─────────────────────────────────
+    if args.template:
         try:
-            preamble_override = load_preamble_template(args.preamble_template)
-        except FileNotFoundError as exc:
+            template = load_document_template(args.template)
+        except (FileNotFoundError, ValueError) as exc:
             logger.error("%s", exc)
             return 1
+        doc = BeamerDocument(
+            preamble=template.preamble,
+            begin_document=template.begin_document,
+            body_parts=doc.body_parts,
+            content_items=doc.content_items,
+            end_document=template.end_document,
+            tail=template.tail or "",
+            source_path=doc.source_path,
+        )
 
     # ── 4. Batch content items ──────────────────────────────────────────
     batches = batch_frames(
@@ -276,7 +288,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
     # ── 6. Reconstruct & write ──────────────────────────────────────────
     try:
-        full_text = reconstruct(doc, translated_items, preamble_override=preamble_override)
+        full_text = reconstruct(doc, translated_items)
     except ValueError as exc:
         logger.error("Reconstruction failed: %s", exc)
         return 1
