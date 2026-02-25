@@ -7,7 +7,7 @@ name = "xdufacool"
 version = "0.9.0"
 description = "A set of toolkit for faculty members in the Xidian University."
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 license = {file = "LICENSE"}
 keywords = ["xidian", "university", "faculty", "toolkit"]
 authors = [
@@ -18,7 +18,7 @@ maintainers = [
 ]
 classifiers = [
   "Development Status :: 4 - Beta",
-  "Programming Language :: Python :: 3.8",
+  "Programming Language :: Python :: 3.10",
 ]
 # Dependencies are managed by pixi.toml
 dependencies = []
@@ -46,5 +46,6 @@ xdufacool = ["templates/*.tex.j2", "logging.yaml"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 filterwarnings = [
-    "ignore::DeprecationWarning:google.genai.types",
+  "ignore::DeprecationWarning:google.genai.types",
+  "ignore::tqdm.TqdmExperimentalWarning",
 ]

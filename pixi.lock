@@ -3421,8 +3421,8 @@ packages:
 - pypi: ./
   name: xdufacool
   version: 0.9.0
-  sha256: 42d512a024479c87e17b2a1d431d507a44d0958776365168851cdafc73bf69b5
-  requires_python: '>=3.9'
+  sha256: da02ce656f8c0d53b32eb27e5000d1aaa2d28b2f342795a6def2fd83c22600db
+  requires_python: '>=3.10'
 - conda: https://conda.anaconda.org/conda-forge/linux-64/yaml-0.2.5-h280c20c_3.conda
   sha256: 6d9ea2f731e284e9316d95fa61869fe7bbba33df7929f82693c121022810f4ad
   md5: a77f85f77be52ff59391544bfe73390a

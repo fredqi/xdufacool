@@ -13,7 +13,10 @@ import sys
 from pathlib import Path
 from typing import List, Optional, Sequence
 
-from tqdm import tqdm
+try:
+    from tqdm.rich import tqdm
+except ImportError:  # pragma: no cover - fallback when rich is unavailable
+    from tqdm import tqdm
 
 from .beamer.gemini_client import DEFAULT_MODEL, RECOMMENDED_MODELS, GeminiTranslator
 from .beamer.latex_parser import BeamerDocument, read_and_parse, reconstruct, load_preamble_template
@@ -135,6 +138,7 @@ def translate_pipeline(
     doc: BeamerDocument,
     batches: List[List[str]],
     translator: GeminiTranslator,
+    input_name: str,
 ) -> List[str]:
     """Run translation across all batches with a progress bar.
 
@@ -150,14 +154,9 @@ def translate_pipeline(
     translated: List[str] = []
     total_items = sum(len(b) for b in batches)
 
-    with tqdm(total=total_items, desc="Translating", unit="item") as pbar:
+    with tqdm(total=total_items, desc=f"Translating {input_name}", unit="item") as pbar:
         for batch_idx, batch in enumerate(batches, 1):
-            logger.info(
-                "Processing batch %d/%d (%d item(s)).",
-                batch_idx,
-                len(batches),
-                len(batch),
-            )
+            logger.info(f"Processing batch {batch_idx}/{len(batches)} ({len(batch)} item(s)).")
             result = translator.translate_batch(batch)
             translated.extend(result)
             pbar.update(len(batch))
@@ -270,7 +269,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         return 1
 
     try:
-        translated_items = translate_pipeline(doc, batches, translator)
+        translated_items = translate_pipeline(doc, batches, translator, input_path.name)
     except RuntimeError as exc:
         logger.error("Translation failed: %s", exc)
         return 1
