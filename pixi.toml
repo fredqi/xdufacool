@@ -1,0 +1,49 @@
+[workspace]
+name = "xdufacool"
+version = "0.9.0"
+description = "A set of toolkit for faculty members in the Xidian University."
+channels = ["conda-forge"]
+platforms = ["linux-64", "win-64"]
+
+[dependencies]
+python = ">=3.9"
+numpy = "*"
+nbformat = "*"
+nbconvert = "*"
+ipython = "*"
+jupytext = "*"
+
+[pypi-dependencies]
+arxiv-latex-cleaner = "*"
+dotenv = "*"
+jinja2 = "*"
+mistletoe = "*"
+openpyxl = "*"
+requests = "*"
+PyYAML = "*"
+pypandoc = "*"
+pysocks = "*"
+pygments = "*"
+python-docx = "*"
+tqdm = "*"
+docx-mailmerge2 = "*"
+google-genai = "*"
+xdufacool = { path = ".", editable = true }
+
+[feature.dev.pypi-dependencies]
+pytest = "*"
+pytest-cov = "*"
+
+[feature.gui.pypi-dependencies]
+pyside6 = "*"
+
+[tasks]
+xdufacool = "xdufacool"
+dupcheck = "dupcheck"
+subprep = "subprep"
+beamer-translate = "beamer-translate"
+
+[environments]
+default = ["dev"]
+dev = ["dev"]
+gui = ["gui"]

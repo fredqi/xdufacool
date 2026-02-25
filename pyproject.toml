@@ -20,36 +20,8 @@ classifiers = [
   "Development Status :: 4 - Beta",
   "Programming Language :: Python :: 3.8",
 ]
-dependencies = [
-  "arxiv-latex-cleaner",
-  "dotenv",
-  "jinja2",
-  "mistletoe",
-  "nbformat",
-  "nbconvert",
-  "numpy",
-  "ipython",
-  "jupytext",
-  "openpyxl",
-  "requests",
-  "PyYAML",
-  "pypandoc",
-  "pysocks",
-  "pygments",
-  "python-docx",
-  "tqdm",
-  "docx-mailmerge2",
-  "google-genai",
-]
-
-[project.optional-dependencies]
-dev = [
-  "pytest",
-  "pytest-cov",
-]
-gui = [
-  "pyside6",
-]
+# Dependencies are managed by pixi.toml
+dependencies = []
 
 [project.urls]
 homepage = "https://github.com/fredqi/xdufacool"
@@ -72,4 +44,7 @@ include-package-data = true
 xdufacool = ["templates/*.tex.j2", "logging.yaml"]
 
 [tool.pytest.ini_options]
-testpaths = ["tests"] 
+testpaths = ["tests"]
+filterwarnings = [
+    "ignore::DeprecationWarning:google.genai.types",
+]

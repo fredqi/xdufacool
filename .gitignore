@@ -93,4 +93,6 @@ ENV/
 !.vscode/tasks.json
 !.vscode/launch.json
 !.vscode/extensions.json
-!.vscode/*.code-snippets
+!.vscode/*.code-snippets# pixi environments
+.pixi/*
+!.pixi/config.toml
