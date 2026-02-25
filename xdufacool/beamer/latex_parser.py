@@ -16,9 +16,11 @@ _FRAME_PATTERN = re.compile(
     r"(\\begin\{frame\}.*?\\end\{frame\})", re.DOTALL
 )
 
-# Regex to match section/subsection commands.
+# Regex to match section/subsection commands with robust nested brace handling.
+# Matches \section{...} or \subsection{...} with optional * (starred version).
+# Note: This pattern handles simple cases; for nested braces use _match_section_command.
 _SECTION_PATTERN = re.compile(
-    r"(\\(?:sub)?section\*?\{[^}]*\})"
+    r"(\\(?:sub)?section\*?\s*\{(?:[^{}]|\{[^{}]*\})*\})"
 )
 
 

@@ -19,6 +19,10 @@ from .beamer.gemini_client import DEFAULT_MODEL, RECOMMENDED_MODELS, GeminiTrans
 from .beamer.latex_parser import BeamerDocument, read_and_parse, reconstruct, load_preamble_template
 from .beamer.utils import batch_frames, default_output_path, write_output
 
+# Load environment variables from .env file if it exists
+from dotenv import load_dotenv
+load_dotenv()
+
 logger = logging.getLogger(__name__)
 
 

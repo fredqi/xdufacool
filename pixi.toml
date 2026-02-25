@@ -15,7 +15,7 @@ jupytext = "*"
 
 [pypi-dependencies]
 arxiv-latex-cleaner = "*"
-dotenv = "*"
+python-dotenv = "*"
 jinja2 = "*"
 mistletoe = "*"
 openpyxl = "*"

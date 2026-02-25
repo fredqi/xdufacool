@@ -106,8 +106,21 @@ beamer-translate slides.tex --model gemini-2.0-flash-exp
 2. **Comment Stripping**: Removes whole-line LaTeX comments from content items
 3. **Batching**: Groups content items respecting `--batch-size` and `--max-tokens`
 4. **Translation**: Sends batches to Gemini API with strict LaTeX preservation instructions
-5. **Validation**: Verifies item count matches (retries up to 2 times on mismatch)
+5. **Validation**: Verifies item count matches with automatic retry and batch reduction
 6. **Reconstruction**: Reassembles document with translated content (and optional custom preamble)
+
+### Robustness Strategies (v0.9.1+)
+
+The tool implements three reliability strategies to handle API response variability:
+
+1. **Count Injection**: Explicitly tells the model "I am providing you with exactly {X} items. You MUST return exactly {X} translated items." This dramatically improves compliance.
+
+2. **Rigid Delimiters**: Each content item is prefixed with `% === FRAME_BOUNDARY_X ===` markers. The model is instructed never to alter these markers, allowing foolproof extraction via delimiter positions rather than regex patterns alone.
+
+3. **Dynamic Batch Reduction**: If an initial batch fails item count validation, it is automatically split in half. Each half is recursively translated and results are merged. This handles cases where the model struggles with large batch sizes.
+   - Example: 5-item batch fails → splits into 3 + 2 → individually translates each → combines results
+
+These strategies work together to dramatically reduce the frequency of item count mismatches from API responses.
 
 ## Translation Rules
 

@@ -82,18 +82,37 @@ RECOMMENDED_MODELS = [
 
 def _build_user_prompt(items: List[str]) -> str:
     """Compose the user message for a single batch of content items.
+    
+    Implements two robustness strategies:
+    1. Count Injection: Explicitly tell the model how many items to return
+    2. Rigid Delimiters: Insert % === FRAME_BOUNDARY_X === markers between items
 
     Args:
         items: List of LaTeX frame or section/subsection strings.
 
     Returns:
-        Formatted user prompt.
+        Formatted user prompt with delimiters and count constraint.
     """
     # Strip comments from each item before sending to API
     cleaned_items = [strip_latex_comments(item) for item in items]
-    joined = "\n\n".join(cleaned_items)
+    
+    # Strategy 2: Add rigid delimiters between items
+    # This makes it nearly impossible for the model to merge items or lose boundaries
+    delimited_content = []
+    for idx, item in enumerate(cleaned_items, 1):
+        boundary_marker = f"% === FRAME_BOUNDARY_{idx} ==="
+        delimited_content.append(boundary_marker)
+        delimited_content.append(item)
+    
+    joined = "\n\n".join(delimited_content)
+    
+    # Strategy 1: Count Injection
+    # Explicitly tell the model the exact count to improve reliability
     return (
-        "Translate the following LaTeX Beamer content into Chinese:\n\n"
+        f"Translate the following LaTeX Beamer content into Chinese. "
+        f"I am providing you with exactly {len(items)} item(s). "
+        f"You MUST return exactly {len(items)} translated item(s). "
+        f"Do not alter or remove the % === FRAME_BOUNDARY_X === markers.\n\n"
         "<CONTENT>\n"
         f"{joined}\n"
         "</CONTENT>"
@@ -108,18 +127,58 @@ def _count_items_in_text(text: str) -> int:
 
 
 def _extract_items_from_response(text: str) -> List[str]:
-    r"""Extract frame and section blocks from an API response string."""
+    r"""Extract frame and section blocks from an API response string.
+    
+    Uses FRAME_BOUNDARY markers as primary extraction method for robustness.
+    Falls back to frame/section pattern matching if no markers are found.
+    
+    Handles both \\begin{frame}...\\end{frame} blocks and \\section/\\subsection commands.
+    Items are ordered by their position in the response text.
+    """
     items = []
     
-    # Find all matches with their positions
+    # Strategy 2 (Extraction): First try to use rigid delimiters
+    # Look for % === FRAME_BOUNDARY_X === markers
+    delimiter_pattern = re.compile(r"% === FRAME_BOUNDARY_\d+ ===")
+    delimiter_matches = list(delimiter_pattern.finditer(text))
+    
+    if delimiter_matches:
+        # Extract content between delimiters
+        for i, match in enumerate(delimiter_matches):
+            start = match.end()
+            # End is either the next delimiter or the end of text
+            end = delimiter_matches[i + 1].start() if i + 1 < len(delimiter_matches) else len(text)
+            content = text[start:end].strip()
+            if content:  # Only add non-empty content
+                items.append(content)
+        logger.debug(
+            "Extracted %d item(s) using FRAME_BOUNDARY delimiters.",
+            len(items),
+        )
+        return items
+    
+    # Fallback: Use original frame/section pattern matching
+    extracted_items = []
     for match in _FRAME_PATTERN.finditer(text):
-        items.append((match.start(), match.group(0)))
+        extracted_items.append((match.start(), match.group(0)))
     for match in _SECTION_PATTERN.finditer(text):
-        items.append((match.start(), match.group(0)))
+        extracted_items.append((match.start(), match.group(0)))
     
     # Sort by position and return only the matched strings
-    items.sort(key=lambda x: x[0])
-    return [item[1] for item in items]
+    extracted_items.sort(key=lambda x: x[0])
+    result = [item[1] for item in extracted_items]
+    
+    # Debug logging for mismatches
+    frame_count = len(_FRAME_PATTERN.findall(text))
+    section_count = len(_SECTION_PATTERN.findall(text))
+    if not result:
+        logger.debug(
+            "No items extracted from response. "
+            "Response length: %d chars, Frame matches: %d, Section matches: %d",
+            len(text), frame_count, section_count
+        )
+    
+    return result
 
 
 # ── Client class ────────────────────────────────────────────────────────────
@@ -166,6 +225,9 @@ class GeminiTranslator:
         max_retries: int = MAX_RETRIES,
     ) -> List[str]:
         """Translate a batch of content items (frames/sections), with retry & validation.
+        
+        Implements Strategy 3: Dynamic Batch Reduction on failure.
+        If a full batch fails, splits it in half for retry attempts.
 
         Args:
             items: LaTeX frame or section/subsection strings to translate.
@@ -179,6 +241,7 @@ class GeminiTranslator:
         """
         expected = len(items)
         prompt = _build_user_prompt(items)
+        translated_items_list = []  # To collect results from split batches
 
         for attempt in range(1 + max_retries):
             try:
@@ -207,20 +270,47 @@ class GeminiTranslator:
                 )
                 return translated_items
 
+            # Provide diagnostic info on mismatch
             logger.warning(
                 "Item count mismatch (expected %d, got %d). "
-                "Retry %d/%d.",
+                "Attempt %d/%d. "
+                "(Response length: %d chars, %d frame(s), %d section(s) found)",
                 expected,
                 len(translated_items),
                 attempt + 1,
-                max_retries,
+                1 + max_retries,
+                len(response),
+                len(_FRAME_PATTERN.findall(response)),
+                len(_SECTION_PATTERN.findall(response)),
             )
+            
+            # Strategy 3: Dynamic Batch Reduction
+            # If we have retries left and batch size > 1, split the batch
+            if attempt < max_retries and expected > 1:
+                logger.info(
+                    "Batch reduction: splitting %d item(s) in half for next attempt.",
+                    expected,
+                )
+                mid = (expected + 1) // 2  # Ceiling division for uneven splits
+                # Recursively translate split batches
+                first_half = self.translate_batch(
+                    items[:mid],
+                    max_retries=max_retries - attempt - 1,
+                )
+                second_half = self.translate_batch(
+                    items[mid:],
+                    max_retries=max_retries - attempt - 1,
+                )
+                return first_half + second_half
+            
             if attempt < max_retries:
                 self._backoff(attempt)
 
         raise RuntimeError(
             f"Item count validation failed after {1 + max_retries} "
-            f"attempt(s): expected {expected} item(s)."
+            f"attempt(s): expected {expected} item(s), got {len(translated_items)}. "
+            f"Even after batch reduction, the API could not produce the expected number of items. "
+            f"Try reducing batch size on the command line or checking the input LaTeX structure."
         )
 
     # ── Internal helpers ────────────────────────────────────────────────
