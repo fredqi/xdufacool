@@ -8,10 +8,9 @@ networks:
 services:
   xdufacool:
     build:
-      context: .
-      dockerfile: Dockerfile
+      context: ..
+      dockerfile: docker/Dockerfile
     image: ghcr.io/fredqi/xdufacool:latest
-    entrypoint: ["entrypoint.sh"]
     container_name: xdufacool
     environment:
       - WORKDIR=/data
