@@ -1,0 +1,74 @@
+\documentclass[fontset=none]{ctexart}
+\usepackage[a4paper,margin=1in]{geometry}
+\usepackage{pdfpages}
+\usepackage{tikz}
+
+% CJK support
+\setmainfont{Noto Serif}
+\setsansfont{Noto Sans}
+\setmonofont{Noto Sans Mono}
+\setCJKmainfont{Noto Serif CJK SC}
+\setCJKsansfont{Noto Sans CJK SC}
+\setCJKmonofont{Noto Sans Mono CJK SC}
+
+\BLOCK{ if language == "zh" }
+\renewcommand{\contentsname}{目录}
+\renewcommand{\figurename}{图}
+\renewcommand{\tablename}{表}
+\BLOCK{ endif }
+
+\usepackage[colorlinks=true,linkcolor=blue]{hyperref}
+% Document metadata
+\BLOCK{ if language == "zh" }
+\hypersetup{
+    pdftitle={\VAR{course_id}-\VAR{assignment_id} 作业提交},
+    pdfauthor={\VAR{course_id}课程},
+    pdfsubject={学生作业汇总}
+}
+\BLOCK{ else }
+\hypersetup{
+    pdftitle={\VAR{course_id}-\VAR{assignment_id} Submissions},
+    pdfauthor={\VAR{course_id} Course},
+    pdfsubject={Assignment Submissions}
+}
+\BLOCK{ endif }
+
+% Use titletoc to customize Table of Contents
+\usepackage{titletoc}
+\titlecontents{section}[4em]
+  {\vspace{10pt}\bfseries}
+  {\makebox[0pt][r]{\thecontentslabel\enspace}}
+  {}{\titlerule*[.75pc]{.}\contentspage}
+
+\BLOCK{ if language == "zh" } 
+\title{\textbf{\VAR{course_id}-\VAR{assignment_id} 作业汇总}}
+\author{\textbf{编译于 \VAR{date}}}
+\BLOCK{ else }
+\title{\textbf{\VAR{course_id}-\VAR{assignment_id} Submissions}}
+\author{\textbf{Compiled on \VAR{date}}}
+\BLOCK{ endif }
+\date{}
+
+% Define custom header macro
+\newcommand{\infoheader}[2]{%
+  \begin{tikzpicture}[remember picture,overlay]
+    \node[anchor=north] at ([yshift=-1cm]current page.north) {%
+      \textcolor{red}{#1 (#2)}};
+    \node[anchor=north east] at ([xshift=-1cm,yshift=-1cm]current page.north east) {%
+      \thepage};
+  \end{tikzpicture}%
+}
+
+\begin{document}
+\maketitle
+\tableofcontents
+\pagestyle{empty}
+
+\BLOCK{ for pdf_file, student_name, student_id in submissions }
+\includepdf[pages=-,
+  pagecommand={\infoheader{\VAR{student_name}}{\VAR{student_id}}},
+  addtotoc={1,section,1,\VAR{student_name} (\VAR{student_id}),sec:\VAR{student_id}}]
+  {\VAR{pdf_file}}
+\BLOCK{ endfor }
+
+\end{document}

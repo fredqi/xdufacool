@@ -1,0 +1,76 @@
+\documentclass[a4paper,10pt,fontset=none]{ctexart}
+
+% Basic packages
+\usepackage[a4paper,margin=1in]{geometry}
+\usepackage{graphicx}
+\usepackage{amssymb,amsmath}
+\usepackage{booktabs}
+\usepackage{listings}
+\usepackage{xcolor}
+
+% CJK support
+\setmainfont[BoldFont={Noto Sans}]{Noto Serif}
+\setsansfont{Noto Sans}
+\setmonofont{Noto Sans Mono}
+\setCJKmainfont[BoldFont={Noto Sans CJK SC}]{Noto Serif CJK SC}
+\setCJKsansfont{Noto Sans CJK SC}
+\setCJKmonofont{Noto Sans Mono CJK SC}
+
+\ctexset{
+  section/name = {,、},
+  section/format = \bfseries,
+  section/number = \chinese{section}
+}
+\BLOCK{ if abstract_name }
+\renewcommand{\abstractname}{\VAR{abstract_name}}
+\BLOCK{ endif }
+
+\usepackage[colorlinks=true,linkcolor=blue]{hyperref}
+% Document metadata
+\hypersetup{
+    pdftitle={\VAR{title}},
+    pdfauthor={\VAR{author}},
+    pdfsubject={\VAR{abstract}}
+}
+
+% Code listing setup
+\lstset{
+    basicstyle=\ttfamily\small,
+    breaklines=true,
+    frame=single,
+    numbers=left,
+    numberstyle=\tiny,
+    keywordstyle=\color{blue},
+    commentstyle=\color{green!60!black},
+    stringstyle=\color{purple},
+    showstringspaces=false
+}
+
+% Document info
+\title{\textbf{\VAR{title}}}
+\author{\VAR{author}}
+\date{\VAR{date}}
+
+\begin{document}
+
+\maketitle
+
+\BLOCK{ if abstract }
+\begin{abstract}
+\VAR{abstract}
+\end{abstract}
+\BLOCK{ endif }
+
+\BLOCK{ if toc }
+\tableofcontents
+\newpage
+\BLOCK{ endif }
+
+\VAR{content}
+
+\BLOCK{ if bibliography }
+\bibliographystyle{plain}
+\bibliography{\VAR{bibliography}}
+\BLOCK{ endif }
+
+\end{document} 

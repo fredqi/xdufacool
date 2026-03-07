@@ -25,7 +25,7 @@ from xdufacool.score_helper import ScoreAnalysis
 class TestScoreStat(TestCase):
 
     def test_grading(self):
-        score_stat = ScoreStat('02', ["43", "65", "95", "77", "88", "100", "50"])
+        score_stat = ScoreStat(["43", "65", "95", "77", "88", "100", "50"])
 
         intervals = score_stat.stat
         self.assertEqual(intervals[0].count, 2, "优秀学生应为2人")
@@ -40,9 +40,9 @@ class TestScoreAnalysis(TestCase):
                                  [["43", "65", "95", "77", "88", "100", "50"],
                                   ["63", "75", "95", "77", "88", "100", "80"]])
         # print(score_analysis)
-        self.assertEqual(score_analysis.get_text('avg_ind42'), '15.74',
+        self.assertEqual(score_analysis.get_text('avg_ind42'), '15.7',
                          "Indicator 43 incorrect")
-        self.assertEqual(score_analysis.get_text('avg_homeworks'), '74.00',
+        self.assertEqual(score_analysis.get_text('avg_homeworks'), '74.0',
                          "Averaged homeworks incorrect")
         
 # 

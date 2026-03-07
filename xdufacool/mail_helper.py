@@ -1,10 +1,10 @@
 import re
-import datetime
 import socks
 import socket
-import email
+import logging
 import imaplib
 import smtplib
+import email
 from email.header import decode_header
 from email.parser import HeaderParser
 from email.utils import parseaddr
@@ -26,27 +26,33 @@ class MailHelper:
 
         self.imapclient = imaplib.IMAP4_SSL(imapserver)
         self.smtpclient = None
+        logging.info(f"* Connecting to {smtpserver}...")
         if isinstance(smtpserver, str):
             self.smtpclient = smtplib.SMTP_SSL(smtpserver)
+            # self.smtpclient.set_debuglevel(1)
+            # logging.debug(f"* Connected to {smtpserver} {self.smtpclient.ehlo()}")
 
-    def login(self, emailuser, password):
+    def login(self, emailuser, password, folder="INBOX"):
         self.imapclient.login(emailuser, password)
-        if self.smtpclient is not None:
+        self.imapclient.select(folder)
+        if self.smtpclient:
             self.smtpclient.login(emailuser, password)
 
     def quit(self):
-        self.imapclient.close()
+        """Logout and close the connection."""
+        try:
+            self.imapclient.close()
+        except imaplib.IMAP4.error:
+            # Ignore close errors as the mailbox might not be selected
+            pass
         self.imapclient.logout()
-        if self.smtpclient is not None:
+        if self.smtpclient:
             self.smtpclient.quit()
 
-    def search(self, folder, condition):
-        self.imapclient.select(folder)
-        # print(self.imapclient.list())
-
+    def search(self, condition):
         typ, data = self.imapclient.uid('search', None, condition)
         if 'OK' != typ:
-            print(typ, data)
+            logging.error(f"Error searching emails: {typ}, {data}")
 
         # print(len(data), type(data), type(data[0]))
         items = [str(dt, 'utf-8') for dt in data[0].split()]
@@ -61,7 +67,7 @@ class MailHelper:
         status, data = self.imapclient.uid('fetch', email_uid,
                                            fetch_fields % " ".join(self._fields))
         if status != 'OK':
-            print('Error retrieving headers.')
+            logging.error('Error retrieving headers.')
             return -1
 
         header = {}
@@ -118,9 +124,14 @@ class MailHelper:
                     encfmt = part.get_param('charset')
                     # if 'UTF-8' != encfmt:
                     # text = unicode(text, encfmt).encode('utf-8')
-                    if encfmt.upper() in ['GB2312', 'GBK']:
+                    if encfmt and encfmt.upper() in ['GB2312', 'GBK']:
                         encfmt = 'GB18030'
-                    text = text.decode(encfmt)
+                    if encfmt:
+                        text = text.decode(encfmt)
+                    else:
+                        # Handle the case where charset is not specified.
+                        #  Could use a default encoding (like UTF-8), or try to guess.
+                        text = text.decode('utf-8', errors='replace')  # Default to UTF-8 and replace errors
                     body += '\n' + text
 
                 if c_disp is None:
@@ -153,6 +164,7 @@ class MailHelper:
         flags = list(set(flags) & self._flags)
         if flags:
             flag_str = " ".join([f"\\{flag}" for flag in flags])
+            logging.info(f"* Flagging {email_uid} with {flag_str}")
             self.imapclient.uid("STORE", email_uid, "+FLAGS", f"({flag_str})")
 
     def unflag(self, email_uid, flags):
@@ -160,11 +172,13 @@ class MailHelper:
         flags = list(set(flags) & self._flags)
         if flags:
             flag_str = " ".join([f"\\{flag}" for flag in flags])
+            logging.info(f"* Unflagging {email_uid} with {flag_str}")
+            self.imapclient.select("INBOX")
             self.imapclient.uid("STORE", email_uid, "-FLAGS", f"({flag_str})")
 
     def send_email(self, from_addr, to_addr, msg):
         """Send a email."""
-        if self.smtpclient is not None:
+        if self.smtpclient:
             # print from_addr, to_addr
             self.smtpclient.sendmail(from_addr,
                                      to_addr,
