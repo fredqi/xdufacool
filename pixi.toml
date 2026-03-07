@@ -12,6 +12,7 @@ nbformat = "*"
 nbconvert = "*"
 ipython = "*"
 jupytext = "*"
+poppler = "*"
 
 [pypi-dependencies]
 arxiv-latex-cleaner = "*"
@@ -25,6 +26,8 @@ pypandoc = "*"
 pysocks = "*"
 pygments = "*"
 python-docx = "*"
+python-pptx = "*"
+pdf2image = "*"
 tqdm = "*"
 rich = "*"
 docx-mailmerge2 = "*"
@@ -43,6 +46,7 @@ xdufacool = "xdufacool"
 dupcheck = "dupcheck"
 subprep = "subprep"
 beamer-translate = "beamer-translate"
+pdf2pptx = "pdf2pptx"
 
 [environments]
 default = ["dev"]
