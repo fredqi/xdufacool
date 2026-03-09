@@ -7,7 +7,7 @@ name = "xdufacool"
 version = "0.9.0"
 description = "A set of toolkit for faculty members in the Xidian University."
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.12"
 license = {file = "LICENSE"}
 keywords = ["xidian", "university", "faculty", "toolkit"]
 authors = [
@@ -18,10 +18,42 @@ maintainers = [
 ]
 classifiers = [
   "Development Status :: 4 - Beta",
-  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.12",
 ]
-# Dependencies are managed by pixi.toml
-dependencies = []
+dependencies = [
+  "arxiv-latex-cleaner",
+  "docx-mailmerge2",
+  "google-genai",
+  "ipython",
+  "jinja2",
+  "jupytext",
+  "mistletoe",
+  "nbconvert",
+  "nbformat",
+  "numpy",
+  "openpyxl",
+  "pdf2image",
+  "pygments",
+  "pypandoc",
+  "PyYAML",
+  "pysocks",
+  "python-docx",
+  "python-dotenv",
+  "python-pptx",
+  "pyzotero",
+  "requests",
+  "rich",
+  "tqdm",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest",
+  "pytest-cov",
+]
+gui = [
+  "pyside6",
+]
 
 [project.urls]
 homepage = "https://github.com/fredqi/xdufacool"

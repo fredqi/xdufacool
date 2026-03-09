@@ -1,0 +1,28 @@
+name: xdufacool
+channels:
+  - conda-forge
+dependencies:
+  - python=3.12
+  - pip
+  - ipython
+  - jupytext
+  - nbconvert
+  - nbformat
+  - numpy
+  - openpyxl
+  - pandoc<3.2
+  - pyyaml
+  - poppler
+  - python-docx
+  - python-pptx
+  - pyzotero
+  - requests
+  - rich
+  - tqdm
+  - pip:
+      - arxiv-latex-cleaner
+      - docx-mailmerge2
+      - google-genai
+      - mistletoe
+      - pypandoc
+      - pysocks

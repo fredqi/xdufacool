@@ -23,7 +23,10 @@ import re
 import xml.etree.ElementTree as ET
 from pyzotero import zotero
 from requests.exceptions import HTTPError
-from pyzotero.zotero_errors import UnsupportedParams
+try:
+    from pyzotero.zotero_errors import UnsupportedParamsError as UnsupportedParams
+except ImportError:
+    from pyzotero.zotero_errors import UnsupportedParams
 
 
 class paperIDParser(object):
