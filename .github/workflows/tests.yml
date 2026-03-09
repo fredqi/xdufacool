@@ -4,19 +4,19 @@ on:
   push:
     paths:
       - 'pyproject.toml'
+      - 'environment.yml'
       - 'xdufacool/**'
       - 'tests/**'
 
 jobs:
   testing:
-    runs-on: ubuntu-${{ matrix.os }}
+    runs-on: ubuntu-latest
     strategy:
       matrix:
-        python: ['3.10', '3.12']
-        os: ['22.04', '24.04']
+        python: ['3.12']
 
     env:
-      LOG_FILE: ubuntu-${{ matrix.os }}-py${{ matrix.python }}.log
+      LOG_FILE: venv-py${{ matrix.python }}.log
 
     steps:
     - name: Checkout
@@ -37,9 +37,46 @@ jobs:
     - name: Unit Tests
       run: |
         python3 -m unittest discover -v > ${{ env.LOG_FILE }}
-      continue-on-error: true
       
     - name: Upload logs
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ env.LOG_FILE }}
+        path: ${{ env.LOG_FILE }}
+
+  mamba-testing:
+    runs-on: ubuntu-latest
+
+    env:
+      LOG_FILE: mamba-py3.12.log
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Set up conda/mamba
+      uses: conda-incubator/setup-miniconda@v3
+      with:
+        activate-environment: xdufacool
+        auto-update-conda: false
+        channels: conda-forge
+        environment-file: environment.yml
+        use-mamba: true
+
+    - name: Install package (mamba)
+      shell: bash -el {0}
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e .[dev]
+
+    - name: Unit Tests (mamba)
+      shell: bash -el {0}
+      run: |
+        python -m pytest tests -q > ${{ env.LOG_FILE }}
+
+    - name: Upload logs
+      if: always()
       uses: actions/upload-artifact@v4
       with:
         name: ${{ env.LOG_FILE }}
@@ -48,10 +85,15 @@ jobs:
   slack:
     runs-on: ubuntu-latest
     name: Notification
-    needs: testing
+    if: always()
+    needs:
+      - testing
+      - mamba-testing
 
     env:
       REPO_NAME: ${{ github.event.repository.name }}
+      VENV_RESULT: ${{ needs.testing.result }}
+      MAMBA_RESULT: ${{ needs.mamba-testing.result }}
     
     steps:
     - uses: actions/download-artifact@v4
@@ -61,7 +103,8 @@ jobs:
     - name: Collect logs
       id: message
       run: |
-        MESSAGE=$(find logs -mindepth 1 -maxdepth 1 -type d | sed -e 's|logs/||' -e 's/^/:white_check_mark: /' | sort)
+        LOGS=$(find logs -mindepth 1 -maxdepth 1 -type d | sed -e 's|logs/||' -e 's/^/:white_check_mark: /' | sort)
+        MESSAGE="venv job: ${VENV_RESULT}\nmamba job: ${MAMBA_RESULT}\n${LOGS}"
         echo "message<<EOF" >> $GITHUB_OUTPUT
         echo "${MESSAGE}" >> $GITHUB_OUTPUT
         echo "EOF" >> $GITHUB_OUTPUT

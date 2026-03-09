@@ -37,7 +37,5 @@ jobs:
         push: true
         context: .
         file: docker/Dockerfile
-        build-args: |
-          PIXI_VERSION=0.64.0
         platforms: linux/amd64
         tags: ghcr.io/${{ github.repository }}:latest
