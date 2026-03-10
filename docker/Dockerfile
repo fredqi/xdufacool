@@ -1,7 +1,7 @@
 FROM ubuntu:noble
 
 ARG DEBIAN_FRONTEND=noninteractive
-ARG APP_USER=xdufacool
+ARG APP_USER=ubuntu
 
 RUN apt-get update -qq && \
     apt-get upgrade -qq && \
@@ -18,8 +18,6 @@ RUN apt-get update -qq && \
     rm -r /var/lib/apt/lists/*
 
 COPY . /app
-RUN groupadd --system ${APP_USER} && \
-    useradd --system --gid ${APP_USER} --create-home --shell /bin/bash ${APP_USER}
 RUN mkdir -p /data && chown -R ${APP_USER}:${APP_USER} /app /data
 
 WORKDIR /app
