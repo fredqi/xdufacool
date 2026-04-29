@@ -16,9 +16,10 @@ from .utils import format_list
 from .homework_manager import parse_subject
 from .mail_helper import MailHelper
 from .models import (
-    Student, 
-    CodingSubmission, 
-    ReportSubmission, 
+    Course,
+    Student,
+    CodingSubmission,
+    ReportSubmission,
     ChallengeSubmission,
     CodingAssignment,
     ReportAssignment, 
@@ -26,12 +27,20 @@ from .models import (
 )
 from .converters import EmailTemplateRenderer
 
-
+# how about refactor the initialization argument from assignment to course or assignments, and update inherited classes accordingly?
 class SubmissionCollector(ABC):
-    """Abstract base class for submission collectors."""
+    """Abstract base class for submission collectors.
+
+    The base collector keeps both a primary assignment context and a course-wide
+    assignment map so subclasses can handle single-assignment and multi-assignment
+    flows with the same interface.
+    """
     
-    def __init__(self, assignment):
-        self.assignment = assignment
+    def __init__(self, course):
+        self.course = course
+        self.assignments = course.assignments
+        self.submission_manager = SubmissionManager()
+        self.identity_resolver = SubmissionIdentityResolver()
         
     @abstractmethod
     def collect_submissions(self):
@@ -42,19 +51,6 @@ class SubmissionCollector(ABC):
 class SubmissionManager:
     """Shared manager for submission lifecycle and file ingestion."""
 
-    def create_submission_for_assignment(self, assignment, student, submission_date):
-        """Create a submission instance for the given assignment type."""
-        if isinstance(assignment, CodingAssignment):
-            return CodingSubmission(assignment, student, submission_date)
-        if isinstance(assignment, ReportAssignment):
-            return ReportSubmission(assignment, student, submission_date)
-        if isinstance(assignment, ChallengeAssignment):
-            logging.warning("! Challenge submissions need explicit file contract; skipping for now.")
-            return None
-
-        logging.error(f"Unknown assignment type: {type(assignment)}")
-        return None
-
     def get_or_create_submission(self, assignment, student_id, student_name, submission_date):
         """Get an existing submission by student ID, or create a new one."""
         submission = assignment.submissions.get(student_id)
@@ -62,9 +58,16 @@ class SubmissionManager:
             return submission
 
         student = Student(student_id, student_name)
-        submission = self.create_submission_for_assignment(assignment, student, submission_date)
+        if isinstance(assignment, CodingAssignment):
+            submission = CodingSubmission(assignment, student, submission_date)
+        if isinstance(assignment, ReportAssignment):
+            submission = ReportSubmission(assignment, student, submission_date)
+        if isinstance(assignment, ChallengeAssignment):
+            logging.warning("! Challenge submissions need explicit file contract; skipping for now.")
         if submission is not None:
             assignment.add_submission(submission)
+        else:
+            logging.error(f"Unknown assignment type: {type(assignment)}")
         return submission
 
     def classify_file_extension(self, assignment, file_path):
@@ -149,10 +152,9 @@ class LocalSubmissionCollector(SubmissionCollector):
     """Collects submissions from local filesystem."""
     
     def __init__(self, assignment):
-        super().__init__(assignment)
+        super().__init__(assignment.course)
+        self.primary_assignment = assignment
         self.submission_dir = assignment.dirs['submissions']
-        self.submission_manager = SubmissionManager()
-        self.identity_resolver = SubmissionIdentityResolver()
         logging.info(f"* Collecting submissions from {self.submission_dir} ...")
         
         if not self.submission_dir.exists():
@@ -161,8 +163,8 @@ class LocalSubmissionCollector(SubmissionCollector):
         
     def collect_submissions(self):
         """Collect submissions from local filesystem."""
-        assignment_code = self.assignment.common_name()
-        # assignment_code = self.assignment.assignment_id
+        assignment_code = self.primary_assignment.common_name()
+        # assignment_code = self.primary_assignment.assignment_id
         file_paths = list(self.submission_dir.rglob(f"{assignment_code}*"))
         file_paths.sort(key=lambda x: (x.suffix.lower() != '.pdf', x))
         
@@ -177,7 +179,7 @@ class LocalSubmissionCollector(SubmissionCollector):
 
             submission_date = datetime.fromtimestamp(file_path.stat().st_mtime)
             submission = self.submission_manager.get_or_create_submission(
-                self.assignment,
+                self.primary_assignment,
                 identity['student_id'],
                 identity['student_name'],
                 submission_date
@@ -185,14 +187,15 @@ class LocalSubmissionCollector(SubmissionCollector):
             if submission is None:
                 continue
 
-            self.submission_manager.ingest_saved_file(self.assignment, submission, file_path)
+            self.submission_manager.ingest_saved_file(self.primary_assignment, submission, file_path)
 
 class EmailSubmissionCollector(SubmissionCollector):
     """Collects submissions from email."""
     
     def __init__(self, assignment, config):
         """Initialize collector with assignment and config dictionary."""
-        super().__init__(assignment)
+        super().__init__(assignment.course)
+        self.primary_assignment = assignment
         self.config = config
         self.email_histories = {}  # student_id -> EmailSubmissionHistory
         
@@ -204,8 +207,6 @@ class EmailSubmissionCollector(SubmissionCollector):
         self.mail_label = config.get('mail_label', '"[Gmail]/All Mail"')
         self.batch_mode = config.get('batch_mode', 'none')
         self.collection_mode = config.get('collection_mode', 'single')
-        self.submission_manager = SubmissionManager()
-        self.identity_resolver = SubmissionIdentityResolver()
         self.unmatched_dir = Path(
             config.get(
                 'unmatched_attachments_dir',
@@ -233,7 +234,7 @@ class EmailSubmissionCollector(SubmissionCollector):
         if collection_mode != 'bulk':
             return assignment.assignment_id
 
-        prefix = cls._extract_search_prefix_static(assignment.assignment_id)
+        prefix = cls._extract_search_prefix(assignment.assignment_id)
         return f"{assignment.course.abbreviation}-{prefix}"
         
     def connect(self, connect_smtp=False):
@@ -270,7 +271,7 @@ class EmailSubmissionCollector(SubmissionCollector):
         email_uids = self.mail_helper.search(conditions)        
         logging.debug(f"* Found {len(email_uids)} emails to check")
         
-        assignment_code = self.assignment.common_name()
+        assignment_code = self.primary_assignment.common_name()
         description = f"[{assignment_code}] Checking submissions"
         for email_uid in tqdm(email_uids, desc=description):
             self._process_email_header(email_uid)
@@ -293,7 +294,7 @@ class EmailSubmissionCollector(SubmissionCollector):
                     self._save_attachments(history.latest_email_uid, student_id, history)
                     
         self.disconnect()
-        return self.assignment.submissions
+        return self.primary_assignment.submissions
     
     def _process_email_header(self, email_uid):
         """Process email header to build submission history."""
@@ -309,7 +310,7 @@ class EmailSubmissionCollector(SubmissionCollector):
 
         submission_date = self.mail_helper.get_datetime(header['date'])
         submission = self.submission_manager.get_or_create_submission(
-            self.assignment,
+            self.primary_assignment,
             student_id,
             student_name,
             submission_date
@@ -333,20 +334,20 @@ class EmailSubmissionCollector(SubmissionCollector):
         conditions = []
         
         # Add subject search condition
-        common_name = self.assignment.common_name()
-        assignment_id = self.assignment.assignment_id
+        common_name = self.primary_assignment.common_name()
+        assignment_id = self.primary_assignment.assignment_id
         if self.collection_mode == 'bulk':
-            prefix = self._extract_search_prefix(assignment_id)
-            conditions.append(f'SUBJECT "{self.assignment.course.abbreviation}-{prefix}"')
-        elif len(self.assignment.course.assignments) == 1:
+            prefix = EmailSubmissionCollector._extract_search_prefix(assignment_id)
+            conditions.append(f'SUBJECT "{self.course.abbreviation}-{prefix}"')
+        elif len(self.course.assignments) == 1:
             conditions.append(f'SUBJECT "{assignment_id}" OR SUBJECT "{common_name}"')
         else:
             conditions.append(f'SUBJECT "{assignment_id}"')
             
         # Add date condition if course has start date
-        if hasattr(self.assignment.course, 'start_date'):
+        if hasattr(self.course, 'start_date'):
             # Convert datetime to IMAP date format (DD-MMM-YYYY)
-            imap_date = self.assignment.course.start_date.strftime("%d-%b-%Y")
+            imap_date = self.course.start_date.strftime("%d-%b-%Y")
             conditions.append(f'SINCE "{imap_date}"')
             
         # In non-batch mode, only check unseen emails
@@ -357,15 +358,8 @@ class EmailSubmissionCollector(SubmissionCollector):
         logging.debug(f"Search condition: {search_condition}")
         return search_condition
 
-    def _extract_search_prefix(self, assignment_id):
-        """Derive teaching-year prefix from assignment ID.
-
-        HW26S01/HW26F01/HW26E01 -> HW26
-        """
-        return self._extract_search_prefix_static(assignment_id)
-
     @staticmethod
-    def _extract_search_prefix_static(assignment_id):
+    def _extract_search_prefix(assignment_id):
         """Normalize assignment ID to bulk scan prefix.
 
         Expected normalization for semester/experiment sequence IDs:
@@ -373,7 +367,8 @@ class EmailSubmissionCollector(SubmissionCollector):
         - HW26F01 -> HW26
         - HW26E01 -> HW26
         """
-        match = re.match(r'^(?P<prefix>.+?)([SsFfEe]\d{2})$', assignment_id)
+        match = re.match(r'^(?P<prefix>.+?)([SsFfEe]\d{1,2})$', assignment_id)
+        logging.debug(f"{match}/{match.group('prefix') if match else assignment_id}")
         if match:
             return match.group('prefix')
         return assignment_id
@@ -386,10 +381,10 @@ class EmailSubmissionCollector(SubmissionCollector):
             return None, None
 
         course_abbrev, assignment_id, _, _ = parts
-        if course_abbrev != self.assignment.course.abbreviation:
+        if course_abbrev != self.course.abbreviation:
             return None, None
 
-        target_assignment = self.assignment.course.assignments.get(assignment_id)
+        target_assignment = self.assignments.get(assignment_id)
         if target_assignment is None:
             return None, None
 
@@ -453,7 +448,7 @@ class EmailSubmissionCollector(SubmissionCollector):
 
             identity = {'student_id': student_id, 'student_name': history.submission.student.name}
             self._save_attachment_to_assignment(
-                self.assignment,
+                self.primary_assignment,
                 identity,
                 filename,
                 data,
@@ -475,7 +470,7 @@ class EmailSubmissionCollector(SubmissionCollector):
         else:
             logging.info(f"* Sending confirmations for {len(student_ids)} submissions")
         
-        assignment_code = self.assignment.common_name()
+        assignment_code = self.primary_assignment.common_name()
         description = f"[{assignment_code}] Sending confirmations"
         self.connect(connect_smtp=True)
         for student_id in tqdm(student_ids, desc=description):

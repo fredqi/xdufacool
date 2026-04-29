@@ -97,22 +97,14 @@ def check_submissions(args):
     if course is None:
         return
     try:
-        processed_scan_keys = set()
         for assignment_id, assignment in course.assignments.items():
-            scan_key = EmailSubmissionCollector.get_scan_key(assignment, check_config)
-            if scan_key in processed_scan_keys:
-                logging.info(
-                    f"* Skipping {assignment} in check flow "
-                    f"(bulk scan key already processed: {scan_key})."
-                )
-                continue
-
-            processed_scan_keys.add(scan_key)
             logging.info(f"* Processing {assignment}...")
             collector = EmailSubmissionCollector(assignment, check_config)
             collector.collect_submissions()
             collector.send_confirmations()
             logging.info("* Collection process finished")
+            if check_config.get('collection_mode', 'single') == 'bulk':
+                break  # In bulk mode, one pass is enough for all assignments
     except (KeyboardInterrupt, TimeoutError, AttributeError, 
             ConnectionResetError, imaplib.IMAP4.error) as e:
         logging.error(f"Error: {type(e).__name__}: {str(e)}")

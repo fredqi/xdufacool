@@ -103,42 +103,6 @@ def _build_challenge_assignment(tmp_path):
     )
 
 
-def test_create_submission_for_report_assignment(tmp_path):
-    manager = SubmissionManager()
-    assignment = _build_report_assignment(tmp_path)
-    student = Student("14020150001", "Alice")
-
-    submission = manager.create_submission_for_assignment(
-        assignment, student, datetime(2024, 9, 10)
-    )
-
-    assert isinstance(submission, ReportSubmission)
-
-
-def test_create_submission_for_coding_assignment(tmp_path):
-    manager = SubmissionManager()
-    assignment = _build_coding_assignment(tmp_path)
-    student = Student("14020150002", "Bob")
-
-    submission = manager.create_submission_for_assignment(
-        assignment, student, datetime(2024, 9, 10)
-    )
-
-    assert isinstance(submission, CodingSubmission)
-
-
-def test_create_submission_for_challenge_assignment_returns_none(tmp_path):
-    manager = SubmissionManager()
-    assignment = _build_challenge_assignment(tmp_path)
-    student = Student("14020150003", "Carol")
-
-    submission = manager.create_submission_for_assignment(
-        assignment, student, datetime(2024, 9, 10)
-    )
-
-    assert submission is None
-
-
 def test_ingest_saved_file_pdf_calls_add_report(tmp_path):
     manager = SubmissionManager()
     assignment = _build_report_assignment(tmp_path)
@@ -247,6 +211,19 @@ def test_local_collector_ignores_malformed_filename(tmp_path):
     collector.collect_submissions()
 
     assert "14020150009" not in assignment.submissions
+
+
+def test_collectors_inherit_shared_manager_and_resolver(tmp_path):
+    assignment = _build_report_assignment(tmp_path)
+    local_collector = LocalSubmissionCollector(assignment)
+    email_collector = EmailSubmissionCollector(assignment, {})
+
+    assert isinstance(local_collector.submission_manager, SubmissionManager)
+    assert isinstance(local_collector.identity_resolver, SubmissionIdentityResolver)
+    assert isinstance(email_collector.submission_manager, SubmissionManager)
+    assert isinstance(email_collector.identity_resolver, SubmissionIdentityResolver)
+    assert local_collector.assignments is assignment.course.assignments
+    assert email_collector.assignments is assignment.course.assignments
 
 
 def test_email_bulk_extract_search_prefix_variants(tmp_path):
