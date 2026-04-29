@@ -87,12 +87,27 @@ def create_summary(args):
     logging.info(f"* Teaching summaries created.")
 
 def check_submissions(args):
-    """Handles the 'check' subcommand to process email submissions."""
+    """Handles the 'check' subcommand to process email submissions.
+
+    In bulk collection mode, mailbox scans are deduplicated by a scan key
+    derived from course abbreviation + teaching-year prefix, so assignments
+    like HW26S01/HW26F01/HW26E01 trigger only one IMAP search pass.
+    """
     course, check_config = load_config(args.config, 'check', args.base_dir)
     if course is None:
         return
     try:
+        processed_scan_keys = set()
         for assignment_id, assignment in course.assignments.items():
+            scan_key = EmailSubmissionCollector.get_scan_key(assignment, check_config)
+            if scan_key in processed_scan_keys:
+                logging.info(
+                    f"* Skipping {assignment} in check flow "
+                    f"(bulk scan key already processed: {scan_key})."
+                )
+                continue
+
+            processed_scan_keys.add(scan_key)
             logging.info(f"* Processing {assignment}...")
             collector = EmailSubmissionCollector(assignment, check_config)
             collector.collect_submissions()

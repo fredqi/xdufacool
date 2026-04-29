@@ -2,6 +2,7 @@ import logging
 import hashlib
 import random
 import os
+import re
 from pathlib import Path
 from datetime import datetime
 from email.header import Header
@@ -37,12 +38,121 @@ class SubmissionCollector(ABC):
         """Collect submissions and return a dictionary of student_id: Submission."""
         pass
 
+
+class SubmissionManager:
+    """Shared manager for submission lifecycle and file ingestion."""
+
+    def create_submission_for_assignment(self, assignment, student, submission_date):
+        """Create a submission instance for the given assignment type."""
+        if isinstance(assignment, CodingAssignment):
+            return CodingSubmission(assignment, student, submission_date)
+        if isinstance(assignment, ReportAssignment):
+            return ReportSubmission(assignment, student, submission_date)
+        if isinstance(assignment, ChallengeAssignment):
+            logging.warning("! Challenge submissions need explicit file contract; skipping for now.")
+            return None
+
+        logging.error(f"Unknown assignment type: {type(assignment)}")
+        return None
+
+    def get_or_create_submission(self, assignment, student_id, student_name, submission_date):
+        """Get an existing submission by student ID, or create a new one."""
+        submission = assignment.submissions.get(student_id)
+        if submission is not None:
+            return submission
+
+        student = Student(student_id, student_name)
+        submission = self.create_submission_for_assignment(assignment, student, submission_date)
+        if submission is not None:
+            assignment.add_submission(submission)
+        return submission
+
+    def classify_file_extension(self, assignment, file_path):
+        """Classify a saved submission file by extension policy."""
+        file_ext = Path(file_path).suffix.lower()
+        if file_ext in assignment.accepted_extensions['compressed']:
+            return 'accepted_compressed'
+        if file_ext in assignment.accepted_extensions['document']:
+            return 'accepted_document'
+        if file_ext in assignment.alternative_extensions['document']:
+            return 'alternative_document'
+        if file_ext in assignment.alternative_extensions['compressed']:
+            return 'alternative_compressed'
+        return 'ignored'
+
+    def ingest_saved_file(self, assignment, submission, file_path):
+        """Ingest a file already saved to disk using assignment extension rules."""
+        status = self.classify_file_extension(assignment, file_path)
+        file_path = Path(file_path)
+        try:
+            relative_path = file_path.relative_to(assignment.dirs['submissions'])
+        except ValueError:
+            relative_path = file_path
+
+        if status == 'accepted_compressed':
+            if hasattr(submission, 'generate_report'):
+                submission.generate_report(file_path)
+                return {'status': status, 'action': 'generate_report'}
+
+            submission.add_report(file_path)
+            return {'status': status, 'action': 'add_report'}
+
+        if status == 'accepted_document':
+            submission.add_report(file_path)
+            return {'status': status, 'action': 'add_report'}
+
+        if status == 'alternative_document':
+            logging.warning(f"! To convert: {relative_path}")
+            return {'status': status, 'action': 'manual_convert'}
+
+        if status == 'alternative_compressed':
+            logging.warning(f"! To decompress manually: {relative_path}")
+            return {'status': status, 'action': 'manual_decompress'}
+
+        logging.warning(f"! Ignore: {relative_path}")
+        return {'status': 'ignored', 'action': 'ignore'}
+
+
+class SubmissionIdentityResolver:
+    """Resolve student identity from subject or canonical filename."""
+
+    def from_subject(self, subject):
+        """Resolve identity from email subject using legacy parser."""
+        student_id, student_name = parse_subject(subject)
+        if not student_id:
+            return None
+        return {
+            'student_id': student_id,
+            'student_name': student_name,
+        }
+
+    def from_filename(self, filename):
+        """Resolve identity from canonical local/email filename.
+
+        Pattern: <course>-<assignment>-<student_id>-<student_name>.<ext>
+        """
+        stem = Path(filename).stem
+        parts = stem.split('-', 3)
+        if len(parts) != 4:
+            return None
+
+        _, _, student_id, student_name = parts
+        if not student_id:
+            return None
+
+        return {
+            'student_id': student_id,
+            'student_name': student_name,
+        }
+
 class LocalSubmissionCollector(SubmissionCollector):
     """Collects submissions from local filesystem."""
     
     def __init__(self, assignment):
         super().__init__(assignment)
         self.submission_dir = assignment.dirs['submissions']
+        self.submission_manager = SubmissionManager()
+        self.identity_resolver = SubmissionIdentityResolver()
         logging.info(f"* Collecting submissions from {self.submission_dir} ...")
         
         if not self.submission_dir.exists():
@@ -60,46 +170,22 @@ class LocalSubmissionCollector(SubmissionCollector):
             # relative_path = file_path.relative_to(self.submission_dir)
             if not file_path.is_file():
                 continue
-                
-            student_id, student_name = file_path.stem.split('-')[-2:]
-            if student_id not in self.assignment.submissions:
-                student = Student(student_id, student_name)
-                submission_date = datetime.fromtimestamp(file_path.stat().st_mtime)
-                submission = self._create_submission(student, submission_date)
-                self.assignment.add_submission(submission)
-            
-            submission = self.assignment.submissions[student_id]
-            self._process_submission_file(submission, file_path)
-    
-    def _create_submission(self, student, submission_date):
-        """Create appropriate submission instance based on assignment type."""
-        if isinstance(self.assignment, CodingAssignment):
-            return CodingSubmission(self.assignment, student, submission_date)
-        elif isinstance(self.assignment, ReportAssignment):
-            return ReportSubmission(self.assignment, student, submission_date)
-        elif isinstance(self.assignment, ChallengeAssignment):
-            return ChallengeSubmission(self.assignment, student, submission_date)
-        else:
-            logging.error(f"Unknown assignment type: {type(self.assignment)}")
-            return None
+            identity = self.identity_resolver.from_filename(file_path.name)
+            if identity is None:
+                logging.warning(f"! Ignore malformed filename: {file_path.name}")
+                continue
 
-    def _process_submission_file(self, submission, file_path):
-        """Process a submission file based on its extension."""
-        file_ext = file_path.suffix.lower()
-        relative_path = file_path.relative_to(self.submission_dir)
-        if file_ext in self.assignment.accepted_extensions['compressed']:
-            if hasattr(submission, 'generate_report'):
-                submission.generate_report(file_path)
-            else:
-                submission.add_report(file_path)
-        elif file_ext in self.assignment.accepted_extensions['document']:
-            submission.add_report(file_path)
-        elif file_ext in self.assignment.alternative_extensions['document']:
-            logging.warning(f"! To convert: {relative_path}")
-        elif file_ext in self.assignment.alternative_extensions['compressed']:
-            logging.warning(f"! To decompress manually: {relative_path}")
-        else:
-            logging.warning(f"! Ignore: {relative_path}")
+            submission_date = datetime.fromtimestamp(file_path.stat().st_mtime)
+            submission = self.submission_manager.get_or_create_submission(
+                self.assignment,
+                identity['student_id'],
+                identity['student_name'],
+                submission_date
+            )
+            if submission is None:
+                continue
+
+            self.submission_manager.ingest_saved_file(self.assignment, submission, file_path)
 
 class EmailSubmissionCollector(SubmissionCollector):
     """Collects submissions from email."""
@@ -117,11 +203,38 @@ class EmailSubmissionCollector(SubmissionCollector):
         self.email_template = config.get('email_template', '')
         self.mail_label = config.get('mail_label', '"[Gmail]/All Mail"')
         self.batch_mode = config.get('batch_mode', 'none')
+        self.collection_mode = config.get('collection_mode', 'single')
+        self.submission_manager = SubmissionManager()
+        self.identity_resolver = SubmissionIdentityResolver()
+        self.unmatched_dir = Path(
+            config.get(
+                'unmatched_attachments_dir',
+                assignment.dirs['submissions'] / 'unmatched'
+            )
+        )
         self.mail_helper = None
         self.testing_addr = None
         if config.get('testing', False):
             self.testing_addr = config.get('testing_addr', 'fred.qi@gmail.com')
             EmailSubmissionHistory.testing_addr = self.testing_addr
+
+    @classmethod
+    def get_scan_key(cls, assignment, config):
+        """Return mailbox scan key used to deduplicate IMAP scans.
+
+        Contract:
+        - In single mode, each assignment gets an independent scan key
+          (`assignment.assignment_id`) to preserve legacy behavior.
+        - In bulk mode, all assignments sharing a teaching-year prefix map to
+          one shared scan key (`<course_abbrev>-<derived_prefix>`), so CLI can
+          run exactly one collector per prefix and avoid duplicate mailbox scans.
+        """
+        collection_mode = config.get('collection_mode', 'single')
+        if collection_mode != 'bulk':
+            return assignment.assignment_id
+
+        prefix = cls._extract_search_prefix_static(assignment.assignment_id)
+        return f"{assignment.course.abbreviation}-{prefix}"
         
     def connect(self, connect_smtp=False):
         """Establish connection to mail server."""
@@ -186,18 +299,26 @@ class EmailSubmissionCollector(SubmissionCollector):
         """Process email header to build submission history."""
         header = self.mail_helper.fetch_header(email_uid)
         logging.debug(f"  - Processing {header['subject']} ({email_uid})")
-        student_id, student_name = parse_subject(header['subject'])
+        identity = self.identity_resolver.from_subject(header['subject'])
         
-        if not student_id:
+        if identity is None:
             logging.warning(f'  ! Invalid subject format: {header["subject"]} ({email_uid})')
+            return
+        student_id = identity['student_id']
+        student_name = identity['student_name']
+
+        submission_date = self.mail_helper.get_datetime(header['date'])
+        submission = self.submission_manager.get_or_create_submission(
+            self.assignment,
+            student_id,
+            student_name,
+            submission_date
+        )
+        if submission is None:
             return
             
         # Create or get submission and history
-        if student_id not in self.assignment.submissions:
-            student = Student(student_id, student_name)
-            submission_date = self.mail_helper.get_datetime(header['date'])
-            submission = self._create_submission(student, submission_date)
-            self.assignment.add_submission(submission)
+        if student_id not in self.email_histories:
             self.email_histories[student_id] = EmailSubmissionHistory(submission)
             
         history = self.email_histories[student_id]
@@ -214,7 +335,10 @@ class EmailSubmissionCollector(SubmissionCollector):
         # Add subject search condition
         common_name = self.assignment.common_name()
         assignment_id = self.assignment.assignment_id
-        if len(self.assignment.course.assignments) == 1:
+        if self.collection_mode == 'bulk':
+            prefix = self._extract_search_prefix(assignment_id)
+            conditions.append(f'SUBJECT "{self.assignment.course.abbreviation}-{prefix}"')
+        elif len(self.assignment.course.assignments) == 1:
             conditions.append(f'SUBJECT "{assignment_id}" OR SUBJECT "{common_name}"')
         else:
             conditions.append(f'SUBJECT "{assignment_id}"')
@@ -232,32 +356,110 @@ class EmailSubmissionCollector(SubmissionCollector):
         search_condition = '(' + ' '.join(conditions) + ')'
         logging.debug(f"Search condition: {search_condition}")
         return search_condition
+
+    def _extract_search_prefix(self, assignment_id):
+        """Derive teaching-year prefix from assignment ID.
+
+        HW26S01/HW26F01/HW26E01 -> HW26
+        """
+        return self._extract_search_prefix_static(assignment_id)
+
+    @staticmethod
+    def _extract_search_prefix_static(assignment_id):
+        """Normalize assignment ID to bulk scan prefix.
+
+        Expected normalization for semester/experiment sequence IDs:
+        - HW26S01 -> HW26
+        - HW26F01 -> HW26
+        - HW26E01 -> HW26
+        """
+        match = re.match(r'^(?P<prefix>.+?)([SsFfEe]\d{2})$', assignment_id)
+        if match:
+            return match.group('prefix')
+        return assignment_id
+
+    def _resolve_assignment_by_filename(self, filename):
+        """Resolve assignment and identity by canonical attachment filename."""
+        stem = Path(filename).stem
+        parts = stem.split('-', 3)
+        if len(parts) != 4:
+            return None, None
+
+        course_abbrev, assignment_id, _, _ = parts
+        if course_abbrev != self.assignment.course.abbreviation:
+            return None, None
+
+        target_assignment = self.assignment.course.assignments.get(assignment_id)
+        if target_assignment is None:
+            return None, None
+
+        identity = self.identity_resolver.from_filename(filename)
+        return target_assignment, identity
+
+    def _save_unmatched_attachment(self, email_uid, filename, data):
+        """Save malformed/unmatched files for manual review."""
+        self.unmatched_dir.mkdir(parents=True, exist_ok=True)
+        file_path = self.unmatched_dir / f"{email_uid}-{filename}"
+        with open(file_path, 'wb') as f:
+            f.write(data)
+        logging.warning(f"  ! Saved unmatched attachment: {file_path}")
+
+    def _save_attachment_to_assignment(self, assignment, identity, filename, data, submission_date, email_uid):
+        """Save attachment bytes to an assignment and ingest via manager."""
+        submission = self.submission_manager.get_or_create_submission(
+            assignment,
+            identity['student_id'],
+            identity['student_name'],
+            submission_date,
+        )
+        if submission is None:
+            return
+
+        student_dir = assignment.dirs['submissions'] / identity['student_id']
+        student_dir.mkdir(parents=True, exist_ok=True)
+
+        file_path = student_dir / filename
+        logging.info(f"  + Saving {filename} for {identity['student_id']} ({email_uid})")
+        with open(file_path, 'wb') as f:
+            f.write(data)
+
+        self.submission_manager.ingest_saved_file(assignment, submission, file_path)
     
-    def _create_submission(self, student, submission_date):
-        """Create appropriate submission instance."""
-        if isinstance(self.assignment, CodingAssignment):
-            return CodingSubmission(self.assignment, student, submission_date)
-        elif isinstance(self.assignment, ReportAssignment):
-            return ReportSubmission(self.assignment, student, submission_date)
-        elif isinstance(self.assignment, ChallengeAssignment):
-            return ChallengeSubmission(self.assignment, student, submission_date)
-        else:
-            logging.error(f"Unknown assignment type: {type(self.assignment)}")
-            return None
-            
     def _save_attachments(self, email_uid, student_id, history):
         """Save email attachments with checksums."""
-        body, attachments = self.mail_helper.fetch_email(email_uid)
+        _, attachments = self.mail_helper.fetch_email(email_uid)
+        submission_date = datetime.now()
+        if history and history.latest_header:
+            submission_date = MailHelper.get_datetime(history.latest_header['date'])
         
         for filename, data in attachments:
-            sha256 = history.add_attachment(filename, data)
-            student_dir = self.assignment.dirs['submissions'] / student_id
-            student_dir.mkdir(parents=True, exist_ok=True)
-            
-            file_path = student_dir / filename
-            logging.info(f"  + Saving {filename} for {student_id} ({email_uid})")
-            with open(file_path, 'wb') as f:
-                f.write(data)
+            if history:
+                history.add_attachment(filename, data)
+
+            if self.collection_mode == 'bulk':
+                assignment, identity = self._resolve_assignment_by_filename(filename)
+                if assignment is None or identity is None:
+                    self._save_unmatched_attachment(email_uid, filename, data)
+                    continue
+                self._save_attachment_to_assignment(
+                    assignment,
+                    identity,
+                    filename,
+                    data,
+                    submission_date,
+                    email_uid,
+                )
+                continue
+
+            identity = {'student_id': student_id, 'student_name': history.submission.student.name}
+            self._save_attachment_to_assignment(
+                self.assignment,
+                identity,
+                filename,
+                data,
+                submission_date,
+                email_uid,
+            )
                 
     def send_confirmations(self):
         """Send confirmation emails for unconfirmed submissions."""
