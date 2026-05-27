@@ -89,19 +89,18 @@ def create_summary(args):
 def check_submissions(args):
     """Handles the 'check' subcommand to process email submissions.
 
-    In bulk collection mode, mailbox scans are deduplicated by a scan key
-    derived from course abbreviation + teaching-year prefix, so assignments
-    like HW26S01/HW26F01/HW26E01 trigger only one IMAP search pass.
+    In bulk collection mode, one collector pass handles all assignments sharing
+    the teaching-year prefix, so assignments like HW26S01/HW26F01/HW26E01
+    trigger only one IMAP search pass.
     """
     course, check_config = load_config(args.config, 'check', args.base_dir)
     if course is None:
         return
     try:
-        for assignment_id, assignment in course.assignments.items():
+        for _, assignment in course.assignments.items():
             logging.info(f"* Processing {assignment}...")
             collector = EmailSubmissionCollector(assignment, check_config)
             collector.collect_submissions()
-            collector.send_confirmations()
             logging.info("* Collection process finished")
             if check_config.get('collection_mode', 'single') == 'bulk':
                 break  # In bulk mode, one pass is enough for all assignments

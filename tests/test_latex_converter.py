@@ -2,12 +2,17 @@ import os
 import shutil
 import pytest
 from pathlib import Path
-from xdufacool.converters import LaTeXConverter
+from xdufacool.converters import LaTeXConverter, PDFCompiler
 
 # Test fixtures
 @pytest.fixture
-def temp_dir(tmp_path):
-    """Create a temporary directory for test files."""
+def temp_dir(tmp_path, monkeypatch):
+    """Create a temporary directory for test files and TeX caches."""
+    tex_cache = tmp_path / "tex-cache"
+    tex_cache.mkdir()
+    monkeypatch.setenv("TEXMFVAR", str(tex_cache / "texmf-var"))
+    monkeypatch.setenv("TEXMFCACHE", str(tex_cache / "texmf-cache"))
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tex_cache / "xdg"))
     return tmp_path
 
 @pytest.fixture
@@ -26,7 +31,9 @@ def latex_converter(temp_dir):
 \end{document}
 """)
     
-    return LaTeXConverter(str(template_dir))
+    converter = LaTeXConverter(str(template_dir))
+    converter.compiler = PDFCompiler('xelatex')
+    return converter
 
 # Test cases
 def test_init_default_template_dir():
@@ -136,6 +143,7 @@ def test_article_template(temp_dir):
 
     # Create LaTeXConverter with default template directory
     converter = LaTeXConverter()
+    converter.compiler = PDFCompiler('xelatex')
 
     # Test data with Chinese content
     context = {

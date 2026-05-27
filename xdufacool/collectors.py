@@ -3,6 +3,7 @@ import hashlib
 import random
 import os
 import re
+import warnings
 from pathlib import Path
 from datetime import datetime
 from email.header import Header
@@ -10,7 +11,12 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from email.utils import formataddr
 from abc import ABC, abstractmethod
-from tqdm import tqdm
+from tqdm import TqdmExperimentalWarning
+
+from xdufacool import mail_helper
+
+warnings.filterwarnings("ignore", category=TqdmExperimentalWarning)
+from tqdm.rich import tqdm
 
 from .utils import format_list
 from .homework_manager import parse_subject
@@ -189,6 +195,158 @@ class LocalSubmissionCollector(SubmissionCollector):
 
             self.submission_manager.ingest_saved_file(self.primary_assignment, submission, file_path)
 
+
+class EmailSubmission:
+    """One email-backed submission with its header, attachments, and reply."""
+
+    def __init__(self, email_uid, header, submission):
+        self.email_uid = email_uid
+        self.header = header
+        self.submission = submission
+        self.body = ''
+        self.attachments = []
+        self.file_checksums = {}
+        self.saved_files = []
+        self.attachments_downloaded = False
+        self.confirmation_sent = False
+
+    @property
+    def message_id(self):
+        """Return the Message-ID used by confirmation replies."""
+        return self.header.get('message-id')
+
+    @property
+    def submission_date(self):
+        """Return the email submission timestamp."""
+        return MailHelper.get_datetime(self.header['date'])
+
+    def is_confirmed_by(self, replied_message_ids):
+        """Return whether this email has already received a confirmation."""
+        return self.message_id in replied_message_ids
+
+    def download_attachments(self, mail_helper, force=False):
+        """Fetch attachments once and compute checksums."""
+        if self.attachments_downloaded and not force:
+            return self.attachments
+
+        self.body, self.attachments = mail_helper.fetch_email(self.email_uid)
+        self.file_checksums = {}
+        for filename, data in self.attachments:
+            sha256 = hashlib.sha256(data).hexdigest()
+            self.file_checksums[sha256] = filename
+
+        self.attachments_downloaded = True
+        return self.attachments
+
+    def save_attachments(self, target_dir=None, overwrite=True, save_attachment=None):
+        """Save downloaded attachments.
+
+        Args:
+            target_dir: Directory for direct file saving.
+            overwrite: Whether direct file saving overwrites existing files.
+            save_attachment: Optional callback accepting
+                (email_submission, filename, data). When provided, it owns the
+                storage/routing policy and should return a saved path or None.
+        """
+        self.saved_files = []
+        for filename, data in self.attachments:
+            if save_attachment:
+                saved_file = save_attachment(self, filename, data)
+                if saved_file:
+                    self.saved_files.append(saved_file)
+                continue
+
+            if target_dir is None:
+                raise ValueError("target_dir is required when save_attachment is not provided")
+
+            target_dir = Path(target_dir)
+            target_dir.mkdir(parents=True, exist_ok=True)
+            saved_file = target_dir / filename
+            if overwrite or not saved_file.exists():
+                with open(saved_file, 'wb') as f:
+                    f.write(data)
+            self.saved_files.append(saved_file)
+
+        return self.saved_files
+
+    def download_and_save_attachments(self, mail_helper, target_dir=None,
+                                      overwrite=True, save_attachment=None):
+        """Download attachments, compute checksums, then save them."""
+        self.download_attachments(mail_helper)
+        return self.save_attachments(
+            target_dir=target_dir,
+            overwrite=overwrite,
+            save_attachment=save_attachment,
+        )
+
+    def create_confirmation_email(self, teacher_name, teacher_email,
+                                  template_name='email_confirm.txt.j2',
+                                  testing_addr=None):
+        """Create a confirmation email for this exact submission email."""
+        data = {
+            'name': self.submission.student.name,
+            # 'fromname': self.header.get('from', ''),
+            'message_id': self.header['message-id'],
+            'checksum': '\n'.join(f'{sha} {fn}'
+                                 for sha, fn in self.file_checksums.items()),
+            'course_name': self.submission.assignment.course.topic,
+            'teacher_name': teacher_name,
+            'comment': '',
+            'language': self.submission.assignment.course.language,
+        }
+
+        msg = MIMEMultipart()
+        msg['From'] = formataddr((teacher_name, teacher_email))
+        to_addr = self.header['from']
+        if testing_addr:
+            logging.debug(f"    Would send to: {to_addr}")
+            to_addr = testing_addr
+            data['name'] = 'Testing'
+
+        msg['To'] = formataddr((data['name'], to_addr))
+        msg['In-Reply-To'] = self.header['message-id']
+        msg['Subject'] = Header(self.header['subject'], 'utf-8')
+
+        exts = {Path(fn).suffix.lower() for fn in self.file_checksums.values()}
+        expected_exts = self.submission.assignment.get_extensions()
+        has_doc = bool(exts & expected_exts)
+
+        if not has_doc:
+            if data['language'] == 'zh':
+                data['comment'] += f"！ 缺少{expected_exts}格式的作业附件。\n提示：请勿使用\"超大附件\"功能发送作业。\n"
+            else:
+                data['comment'] += f"! Missing attachments with extensions: {expected_exts}.\n"
+
+        if hasattr(self.submission, 'leaderboard'):
+            score_percentage = self.submission.score * 100
+            if data['language'] == 'zh':
+                data['accuracy'] = f"您此次提交的结果正确率为{score_percentage:5.2f}%。"
+            else:
+                data['accuracy'] = f"The accuracy of your submission is {score_percentage:5.2f}%."
+
+        base_dir = self.submission.assignment.course.base_dir
+        template_renderer = EmailTemplateRenderer(base_dir/'templates')
+        body = template_renderer.render_template(template_name, **data)
+        msg.attach(MIMEText(body, 'plain', 'utf-8'))
+
+        logging.debug(f"  - Confirmation created (To: {msg['To']}, Subject: {msg['Subject']})")
+        return to_addr, msg
+
+    def send_confirmation(self, mail_helper, teacher_email):
+        logging.debug(f"    {mail_helper}")
+        if not mail_helper:
+            return None
+        message = self.confirmation_message
+        to_addr = self.confirmation_to_addr
+        logging.debug(f"    Sending confirmation to {to_addr}/{self.confirmation_sent}")
+        logging.debug(f"    Message: {message}")
+        if not self.confirmation_sent and message:
+            reta = mail_helper.send_email(teacher_email, to_addr, message)
+            retb = mail_helper.flag(self.email_uid, ['Seen', 'Answered'])
+            logging.debug(f"    email sending {reta} {retb}")
+            self.confirmation_sent = True
+
+
 class EmailSubmissionCollector(SubmissionCollector):
     """Collects submissions from email."""
     
@@ -205,7 +363,7 @@ class EmailSubmissionCollector(SubmissionCollector):
         self.teacher_email = config.get('email', '')
         self.email_template = config.get('email_template', '')
         self.mail_label = config.get('mail_label', '"[Gmail]/All Mail"')
-        self.batch_mode = config.get('batch_mode', 'none')
+        self.batch_mode = config.get('batch_mode', False)
         self.collection_mode = config.get('collection_mode', 'single')
         self.unmatched_dir = Path(
             config.get(
@@ -219,24 +377,6 @@ class EmailSubmissionCollector(SubmissionCollector):
             self.testing_addr = config.get('testing_addr', 'fred.qi@gmail.com')
             EmailSubmissionHistory.testing_addr = self.testing_addr
 
-    @classmethod
-    def get_scan_key(cls, assignment, config):
-        """Return mailbox scan key used to deduplicate IMAP scans.
-
-        Contract:
-        - In single mode, each assignment gets an independent scan key
-          (`assignment.assignment_id`) to preserve legacy behavior.
-        - In bulk mode, all assignments sharing a teaching-year prefix map to
-          one shared scan key (`<course_abbrev>-<derived_prefix>`), so CLI can
-          run exactly one collector per prefix and avoid duplicate mailbox scans.
-        """
-        collection_mode = config.get('collection_mode', 'single')
-        if collection_mode != 'bulk':
-            return assignment.assignment_id
-
-        prefix = cls._extract_search_prefix(assignment.assignment_id)
-        return f"{assignment.course.abbreviation}-{prefix}"
-        
     def connect(self, connect_smtp=False):
         """Establish connection to mail server."""
         if self.mail_helper:
@@ -268,33 +408,28 @@ class EmailSubmissionCollector(SubmissionCollector):
         """Collect submissions from email."""
         self.connect()
         conditions = self._build_search_conditions()
-        email_uids = self.mail_helper.search(conditions)        
+        email_uids = self.mail_helper.search(conditions)
         logging.debug(f"* Found {len(email_uids)} emails to check")
         
-        assignment_code = self.primary_assignment.common_name()
-        description = f"[{assignment_code}] Checking submissions"
+        description = f"[{self._search_subject()}] Checking submissions"
         for email_uid in tqdm(email_uids, desc=description):
             self._process_email_header(email_uid)
-    
+
         student_ids = list(self.email_histories.keys())
         if self.testing_addr and len(student_ids) > 5:
             student_ids = random.sample(student_ids, 5)
-            logging.debug(f"* Processing only {len(student_ids)} submissions (Testing mode)")
-        else:
-            logging.info(f"* Processing {len(student_ids)} submissions")
-        
-        description = f"[{assignment_code}] Saving attachments"
-        for student_id in tqdm(student_ids, desc=description):
-            history = self.email_histories[student_id]
-            if self.batch_mode == "all":
-                for email_uid in history.email_uids:
-                    self._save_attachments(email_uid, student_id, history)
-            else:
-                if history.latest_email_uid:
-                    self._save_attachments(history.latest_email_uid, student_id, history)
-                    
+            logging.debug(f"* Testing mode")
+        logging.info(f"* Processing {len(student_ids)} email submissions")
+        self._process_submissions(student_ids)
         self.disconnect()
-        return self.primary_assignment.submissions
+
+        if self.batch_mode:
+            logging.info("* Confirmation emails are skipped in batch mode.")
+            return
+        
+        self.connect(connect_smtp=True)
+        self._send_confirmations(student_ids)
+        self.disconnect()
     
     def _process_email_header(self, email_uid):
         """Process email header to build submission history."""
@@ -334,15 +469,8 @@ class EmailSubmissionCollector(SubmissionCollector):
         conditions = []
         
         # Add subject search condition
-        common_name = self.primary_assignment.common_name()
-        assignment_id = self.primary_assignment.assignment_id
-        if self.collection_mode == 'bulk':
-            prefix = EmailSubmissionCollector._extract_search_prefix(assignment_id)
-            conditions.append(f'SUBJECT "{self.course.abbreviation}-{prefix}"')
-        elif len(self.course.assignments) == 1:
-            conditions.append(f'SUBJECT "{assignment_id}" OR SUBJECT "{common_name}"')
-        else:
-            conditions.append(f'SUBJECT "{assignment_id}"')
+        subject_pattern = self._search_subject()
+        conditions.append(f'SUBJECT "{subject_pattern}"')
             
         # Add date condition if course has start date
         if hasattr(self.course, 'start_date'):
@@ -351,12 +479,20 @@ class EmailSubmissionCollector(SubmissionCollector):
             conditions.append(f'SINCE "{imap_date}"')
             
         # In non-batch mode, only check unseen emails
-        if self.batch_mode == 'none':
+        if not self.batch_mode:
             conditions.append('UNSEEN')
             
         search_condition = '(' + ' '.join(conditions) + ')'
         logging.debug(f"Search condition: {search_condition}")
         return search_condition
+
+    def _search_subject(self):
+        """Return the subject pattern used for email search and progress labels."""
+        assignment_id = self.primary_assignment.assignment_id
+        if self.collection_mode == 'bulk':
+            prefix = EmailSubmissionCollector._extract_search_prefix(assignment_id)
+            return f"{self.course.abbreviation}-{prefix}"
+        return self.primary_assignment.common_name()
 
     @staticmethod
     def _extract_search_prefix(assignment_id):
@@ -398,6 +534,7 @@ class EmailSubmissionCollector(SubmissionCollector):
         with open(file_path, 'wb') as f:
             f.write(data)
         logging.warning(f"  ! Saved unmatched attachment: {file_path}")
+        return file_path
 
     def _save_attachment_to_assignment(self, assignment, identity, filename, data, submission_date, email_uid):
         """Save attachment bytes to an assignment and ingest via manager."""
@@ -419,6 +556,7 @@ class EmailSubmissionCollector(SubmissionCollector):
             f.write(data)
 
         self.submission_manager.ingest_saved_file(assignment, submission, file_path)
+        return file_path
     
     def _save_attachments(self, email_uid, student_id, history):
         """Save email attachments with checksums."""
@@ -455,38 +593,105 @@ class EmailSubmissionCollector(SubmissionCollector):
                 submission_date,
                 email_uid,
             )
+
+    def _save_email_submission_attachment(self, student_id, email_submission, filename, data):
+        """Route and save one attachment from an EmailSubmission."""
+        if self.collection_mode == 'bulk':
+            assignment, identity = self._resolve_assignment_by_filename(filename)
+            if assignment is None or identity is None:
+                return self._save_unmatched_attachment(email_submission.email_uid, filename, data)
+
+            return self._save_attachment_to_assignment(
+                assignment,
+                identity,
+                filename,
+                data,
+                email_submission.submission_date,
+                email_submission.email_uid,
+            )
+
+        identity = {
+            'student_id': student_id,
+            'student_name': email_submission.submission.student.name,
+        }
+        return self._save_attachment_to_assignment(
+            self.primary_assignment,
+            identity,
+            filename,
+            data,
+            email_submission.submission_date,
+            email_submission.email_uid,
+        )
+
+    def _download_and_save_email_submission(self, email_submission, student_id):
+        """Download and save one email submission."""
+        email_submission.download_and_save_attachments(
+            self.mail_helper,
+            save_attachment=lambda submission, filename, data: (
+                self._save_email_submission_attachment(student_id, submission, filename, data)
+            ),
+        )
+
+    def _email_submissions_to_confirm(self, history):
+        """Select email submissions to confirm for the current collection mode."""
+        if self.collection_mode == 'bulk':
+            return history.unconfirmed_email_submissions()
+
+        email_submission = history.latest_email_submission()
+        if email_submission and (
+                not email_submission.is_confirmed_by(history.replied_message_ids)
+                or self.testing_addr):
+            return [email_submission]
+
+        return []
+
+    def _process_submissions(self, student_ids):
+        """Download, save, and optionally confirm selected email submissions."""
+        description = f"[{self._search_subject()}] Processing submissions"
+        for student_id in tqdm(student_ids, desc=description):
+            history = self.email_histories[student_id]
+            if self.batch_mode:
+                email_submissions = history.email_submissions_in_order()
+            else:
+                email_submissions = self._email_submissions_to_confirm(history)
+
+            for email_submission in email_submissions:
+                logging.debug(
+                    f"  - Processing submission for {student_id} "
+                    f"({email_submission.email_uid})"
+                )
+                self._download_and_save_email_submission(email_submission, student_id)
                 
+    def _send_confirmations(self, student_ids):
+        """Send prepared confirmation emails."""
+        logging.info(f"* Sending confirmations for {len(student_ids)} students")
+        description = f"[{self._search_subject()}] Sending confirmations"
+        for student_id in tqdm(student_ids, desc=description):
+            history = self.email_histories[student_id]
+            for email_submission in self._email_submissions_to_confirm(history):
+                if email_submission.confirmation_sent:
+                    continue
+                logging.debug(f"  - Sending confirmation for {student_id}")
+                to_addr, message = email_submission.create_confirmation_email(
+                    self.teacher_name,
+                    self.teacher_email,
+                    self.email_template,
+                    testing_addr=self.testing_addr
+                )
+                if message:
+                    self.mail_helper.send_email(self.teacher_email, to_addr, message)
+                    self.mail_helper.flag(email_submission.email_uid, ['Seen', 'Answered'])
+                    email_submission.confirmation_sent = True
+
     def send_confirmations(self):
-        """Send confirmation emails for unconfirmed submissions."""
-        if self.batch_mode != 'none':
-            logging.info(f"* Confirmation emails are skipped in '{self.batch_mode}' batch mode.")
+        """Send prepared confirmation emails."""
+        if self.batch_mode:
+            logging.info("* Confirmation emails are skipped in batch mode.")
             return
 
         student_ids = list(self.email_histories.keys())
-        
-        if self.testing_addr and len(student_ids) > 5:
-            student_ids = random.sample(student_ids, 5)
-            logging.debug(f"* Sending confirmations for {len(student_ids)} submissions (Testing mode)")
-        else:
-            logging.info(f"* Sending confirmations for {len(student_ids)} submissions")
-        
-        assignment_code = self.primary_assignment.common_name()
-        description = f"[{assignment_code}] Sending confirmations"
         self.connect(connect_smtp=True)
-        for student_id in tqdm(student_ids, desc=description):
-            history = self.email_histories[student_id]
-            if not history.is_confirmed() or self.testing_addr:
-                logging.debug(f"  - Creating confirmation for {student_id} ({history.latest_email_uid})")
-                to_addr, msg = history.create_confirmation_email(
-                    self.teacher_name, 
-                    self.teacher_email,
-                    self.email_template
-                )
-                
-                if msg:
-                    logging.debug(f"    Sending confirmation to {to_addr}")
-                    self.mail_helper.send_email(self.teacher_email, to_addr, msg)
-                    self.mail_helper.flag(history.latest_email_uid, ['Seen', 'Answered'])
+        self._send_confirmations(student_ids)
         self.disconnect()
 
 class EmailSubmissionHistory:
@@ -502,6 +707,7 @@ class EmailSubmissionHistory:
         self.replied_message_ids = set()
         self.file_checksums = {}  # sha256 -> filename
         self.latest_header = None
+        self.email_submissions = {}
 
     def update_from_email(self, email_uid, header, teacher_email):
         """Update submission history from new email."""
@@ -525,6 +731,7 @@ class EmailSubmissionHistory:
                 
         prev_uid = self.latest_email_uid
         self.email_uids.append(email_uid)
+        self.email_submissions[email_uid] = EmailSubmission(email_uid, header, self.submission)
         
         if should_update:
             self.latest_email_uid = email_uid
@@ -532,6 +739,27 @@ class EmailSubmissionHistory:
             self.submission.submission_date = email_time
             
         return prev_uid if should_update else None
+
+    def email_submissions_in_order(self):
+        """Return email submissions from earliest to latest."""
+        return sorted(
+            self.email_submissions.values(),
+            key=lambda email_submission: email_submission.submission_date,
+        )
+
+    def unconfirmed_email_submissions(self):
+        """Return unconfirmed email submissions from earliest to latest."""
+        return [
+            email_submission
+            for email_submission in self.email_submissions_in_order()
+            if not email_submission.is_confirmed_by(self.replied_message_ids)
+        ]
+
+    def latest_email_submission(self):
+        """Return the latest email submission object."""
+        if not self.latest_email_uid:
+            return None
+        return self.email_submissions.get(self.latest_email_uid)
         
     def add_attachment(self, filename, data):
         """Add attachment with checksum."""
