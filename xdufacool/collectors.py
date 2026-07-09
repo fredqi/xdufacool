@@ -238,29 +238,13 @@ class EmailSubmission:
         self.attachments_downloaded = True
         return self.attachments
 
-    def save_attachments(self, target_dir=None, overwrite=True, save_attachment=None):
-        """Save downloaded attachments.
+    def save_attachments(self, target_dir, overwrite=True):
+        """Save already-downloaded attachments into one directory."""
+        target_dir = Path(target_dir)
+        target_dir.mkdir(parents=True, exist_ok=True)
 
-        Args:
-            target_dir: Directory for direct file saving.
-            overwrite: Whether direct file saving overwrites existing files.
-            save_attachment: Optional callback accepting
-                (email_submission, filename, data). When provided, it owns the
-                storage/routing policy and should return a saved path or None.
-        """
         self.saved_files = []
         for filename, data in self.attachments:
-            if save_attachment:
-                saved_file = save_attachment(self, filename, data)
-                if saved_file:
-                    self.saved_files.append(saved_file)
-                continue
-
-            if target_dir is None:
-                raise ValueError("target_dir is required when save_attachment is not provided")
-
-            target_dir = Path(target_dir)
-            target_dir.mkdir(parents=True, exist_ok=True)
             saved_file = target_dir / filename
             if overwrite or not saved_file.exists():
                 with open(saved_file, 'wb') as f:
@@ -268,16 +252,6 @@ class EmailSubmission:
             self.saved_files.append(saved_file)
 
         return self.saved_files
-
-    def download_and_save_attachments(self, mail_helper, target_dir=None,
-                                      overwrite=True, save_attachment=None):
-        """Download attachments, compute checksums, then save them."""
-        self.download_attachments(mail_helper)
-        return self.save_attachments(
-            target_dir=target_dir,
-            overwrite=overwrite,
-            save_attachment=save_attachment,
-        )
 
     def create_confirmation_email(self, teacher_name, teacher_email,
                                   template_name='email_confirm.txt.j2',
@@ -375,7 +349,6 @@ class EmailSubmissionCollector(SubmissionCollector):
         self.testing_addr = None
         if config.get('testing', False):
             self.testing_addr = config.get('testing_addr', 'fred.qi@gmail.com')
-            EmailSubmissionHistory.testing_addr = self.testing_addr
 
     def connect(self, connect_smtp=False):
         """Establish connection to mail server."""
@@ -536,101 +509,69 @@ class EmailSubmissionCollector(SubmissionCollector):
         logging.warning(f"  ! Saved unmatched attachment: {file_path}")
         return file_path
 
-    def _save_attachment_to_assignment(self, assignment, identity, filename, data, submission_date, email_uid):
+    def _save_attachment_to_assignment(self, assignment, identity, email_submission, filename, data):
         """Save attachment bytes to an assignment and ingest via manager."""
         submission = self.submission_manager.get_or_create_submission(
             assignment,
             identity['student_id'],
             identity['student_name'],
-            submission_date,
+            email_submission.submission_date,
         )
         if submission is None:
-            return
+            return None
 
         student_dir = assignment.dirs['submissions'] / identity['student_id']
         student_dir.mkdir(parents=True, exist_ok=True)
-
         file_path = student_dir / filename
-        logging.info(f"  + Saving {filename} for {identity['student_id']} ({email_uid})")
+        logging.info(
+            f"  + Saving {filename} for {identity['student_id']} "
+            f"({email_submission.email_uid})"
+        )
         with open(file_path, 'wb') as f:
             f.write(data)
 
         self.submission_manager.ingest_saved_file(assignment, submission, file_path)
         return file_path
-    
-    def _save_attachments(self, email_uid, student_id, history):
-        """Save email attachments with checksums."""
-        _, attachments = self.mail_helper.fetch_email(email_uid)
-        submission_date = datetime.now()
-        if history and history.latest_header:
-            submission_date = MailHelper.get_datetime(history.latest_header['date'])
-        
-        for filename, data in attachments:
-            if history:
-                history.add_attachment(filename, data)
 
-            if self.collection_mode == 'bulk':
-                assignment, identity = self._resolve_assignment_by_filename(filename)
-                if assignment is None or identity is None:
-                    self._save_unmatched_attachment(email_uid, filename, data)
-                    continue
-                self._save_attachment_to_assignment(
-                    assignment,
-                    identity,
-                    filename,
-                    data,
-                    submission_date,
-                    email_uid,
-                )
-                continue
-
-            identity = {'student_id': student_id, 'student_name': history.submission.student.name}
-            self._save_attachment_to_assignment(
-                self.primary_assignment,
-                identity,
-                filename,
-                data,
-                submission_date,
-                email_uid,
-            )
-
-    def _save_email_submission_attachment(self, student_id, email_submission, filename, data):
-        """Route and save one attachment from an EmailSubmission."""
+    def _attachment_assignment(self, student_id, email_submission, filename):
+        """Resolve where one email attachment should be saved."""
         if self.collection_mode == 'bulk':
-            assignment, identity = self._resolve_assignment_by_filename(filename)
-            if assignment is None or identity is None:
-                return self._save_unmatched_attachment(email_submission.email_uid, filename, data)
-
-            return self._save_attachment_to_assignment(
-                assignment,
-                identity,
-                filename,
-                data,
-                email_submission.submission_date,
-                email_submission.email_uid,
-            )
+            return self._resolve_assignment_by_filename(filename)
 
         identity = {
             'student_id': student_id,
             'student_name': email_submission.submission.student.name,
         }
+        return self.primary_assignment, identity
+    
+    def _save_email_submission_attachment(self, student_id, email_submission, filename, data):
+        """Route and save one attachment from an EmailSubmission."""
+        assignment, identity = self._attachment_assignment(student_id, email_submission, filename)
+        if assignment is None or identity is None:
+            return self._save_unmatched_attachment(email_submission.email_uid, filename, data)
+
         return self._save_attachment_to_assignment(
-            self.primary_assignment,
+            assignment,
             identity,
+            email_submission,
             filename,
             data,
-            email_submission.submission_date,
-            email_submission.email_uid,
         )
 
     def _download_and_save_email_submission(self, email_submission, student_id):
-        """Download and save one email submission."""
-        email_submission.download_and_save_attachments(
-            self.mail_helper,
-            save_attachment=lambda submission, filename, data: (
-                self._save_email_submission_attachment(student_id, submission, filename, data)
-            ),
-        )
+        """Download one email submission and save its attachments."""
+        email_submission.download_attachments(self.mail_helper)
+        email_submission.saved_files = []
+        for filename, data in email_submission.attachments:
+            saved_file = self._save_email_submission_attachment(
+                student_id,
+                email_submission,
+                filename,
+                data,
+            )
+            if saved_file:
+                email_submission.saved_files.append(saved_file)
+        return email_submission.saved_files
 
     def _email_submissions_to_confirm(self, history):
         """Select email submissions to confirm for the current collection mode."""
@@ -683,21 +624,8 @@ class EmailSubmissionCollector(SubmissionCollector):
                     self.mail_helper.flag(email_submission.email_uid, ['Seen', 'Answered'])
                     email_submission.confirmation_sent = True
 
-    def send_confirmations(self):
-        """Send prepared confirmation emails."""
-        if self.batch_mode:
-            logging.info("* Confirmation emails are skipped in batch mode.")
-            return
-
-        student_ids = list(self.email_histories.keys())
-        self.connect(connect_smtp=True)
-        self._send_confirmations(student_ids)
-        self.disconnect()
-
 class EmailSubmissionHistory:
     """Tracks email submission history and handles confirmation emails."""
-
-    testing_addr = None
    
     def __init__(self, submission):
         self.submission = submission
@@ -705,7 +633,6 @@ class EmailSubmissionHistory:
         self.email_uids = []
         self.response_uids = []
         self.replied_message_ids = set()
-        self.file_checksums = {}  # sha256 -> filename
         self.latest_header = None
         self.email_submissions = {}
 
@@ -761,77 +688,7 @@ class EmailSubmissionHistory:
             return None
         return self.email_submissions.get(self.latest_email_uid)
         
-    def add_attachment(self, filename, data):
-        """Add attachment with checksum."""
-        sha256 = hashlib.sha256(data).hexdigest()
-        self.file_checksums[sha256] = filename
-        return sha256
-        
     def is_confirmed(self):
         """Check if latest submission has been confirmed."""
         return (self.latest_header and 
                 self.latest_header.get('message-id') in self.replied_message_ids)
-                
-    def create_confirmation_email(self, teacher_name, teacher_email,
-                                  template_name='email_confirm.txt.j2'):
-        """Create confirmation email for latest submission.
-        
-        Args:
-            teacher_name (str): Name of the teacher sending the confirmation
-            teacher_email (str): Email address of the teacher
-            
-        Returns:
-            tuple: (email message object, recipient address) or (None, None) if no submission
-        """
-        
-        if not self.latest_header:
-            return None, None
-            
-        data = {
-            'name': self.submission.student.name,
-            'fromname': self.latest_header.get('from', ''),
-            'message_id': self.latest_header['message-id'],
-            'checksum': '\n'.join(f'{sha} {fn}' 
-                                 for sha, fn in self.file_checksums.items()),
-            'course_name': self.submission.assignment.course.topic,
-            'teacher_name': teacher_name,
-            'comment': '',
-            'language': self.submission.assignment.course.language,
-        }
-
-        msg = MIMEMultipart()
-        from_addr = (teacher_name, teacher_email)
-        msg['From'] = formataddr(from_addr)
-        to_addr = self.latest_header['from']
-        if EmailSubmissionHistory.testing_addr:  # If testing_addr is set, use it
-            logging.debug(f"    Would send to: {to_addr}")
-            to_addr = EmailSubmissionHistory.testing_addr
-            data['name'] = 'Testing'
-        
-        msg['To'] = formataddr((data['name'], to_addr))
-        msg['In-Reply-To'] = self.latest_header['message-id']
-        msg['Subject'] = Header(self.latest_header['subject'], 'utf-8')
-       
-        exts = {Path(fn).suffix.lower() for fn in self.file_checksums.values()}
-        expected_exts = self.submission.assignment.get_extensions()
-        has_doc = bool(exts & expected_exts)
-        
-        if not has_doc:
-            if data['language'] == 'zh':
-                data['comment'] += f"！ 缺少{expected_exts}格式的作业附件。\n提示：请勿使用\"超大附件\"功能发送作业。\n"
-            else:
-                data['comment'] += f"! Missing attachments with extensions: {expected_exts}.\n"
-            
-        if hasattr(self.submission, 'leaderboard'):
-            score_percentage = self.submission.score * 100
-            if  data['language'] == 'zh':
-                data['accuracy'] = f"您此次提交的结果正确率为{score_percentage:5.2f}%。"
-            else:
-                data['accuracy'] = f"The accuracy of your submission is {score_percentage:5.2f}%."
-        
-        base_dir = self.submission.assignment.course.base_dir
-        template_renderer = EmailTemplateRenderer(base_dir/'templates')
-        body = template_renderer.render_template(template_name, **data)
-        msg.attach(MIMEText(body, 'plain', 'utf-8'))
-        
-        return to_addr, msg

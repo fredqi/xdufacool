@@ -292,10 +292,18 @@ def test_email_bulk_attachment_routes_to_target_assignment_and_unmatched(tmp_pat
         "Ivy",
         datetime(2024, 9, 10),
     )
-    history = EmailSubmissionHistory(submission)
-    history.latest_header = {"date": "Mon, 09 Sep 2024 10:00:00 +0800"}
+    email_submission = EmailSubmission(
+        "EMAIL01",
+        {
+            "from": "ivy@example.com",
+            "subject": "PRML-HW26S01-14020150010-Ivy",
+            "date": "Mon, 09 Sep 2024 10:00:00 +0800",
+            "message-id": "<student-10@example.com>",
+        },
+        submission,
+    )
 
-    collector._save_attachments("EMAIL01", "14020150010", history)
+    collector._download_and_save_email_submission(email_submission, "14020150010")
 
     assert "14020150010" in target_assignment.submissions
     routed_submission = target_assignment.submissions["14020150010"]
@@ -379,7 +387,7 @@ def test_email_submission_saves_downloaded_attachments(tmp_path):
     assert saved_files[0].read_bytes() == b"%PDF-1.4\n"
 
 
-def test_email_submission_download_and_save_uses_callback(tmp_path):
+def test_email_submission_downloads_then_saves_to_target_dir(tmp_path):
     class FakeMailHelper:
         def fetch_email(self, email_uid):
             assert email_uid == "UID2"
@@ -405,22 +413,16 @@ def test_email_submission_download_and_save_uses_callback(tmp_path):
         },
         submission,
     )
-    saved = []
 
-    def save_attachment(email_submission_arg, filename, data):
-        assert email_submission_arg is email_submission
-        file_path = tmp_path / filename
-        file_path.write_bytes(data)
-        saved.append((filename, data))
-        return file_path
+    email_submission.download_attachments(FakeMailHelper())
+    saved_files = email_submission.save_attachments(tmp_path / "saved")
 
-    saved_files = email_submission.download_and_save_attachments(
-        FakeMailHelper(),
-        save_attachment=save_attachment,
-    )
-
-    assert saved == [("first.pdf", b"first"), ("second.docx", b"second")]
-    assert saved_files == [tmp_path / "first.pdf", tmp_path / "second.docx"]
+    assert saved_files == [
+        tmp_path / "saved" / "first.pdf",
+        tmp_path / "saved" / "second.docx",
+    ]
+    assert saved_files[0].read_bytes() == b"first"
+    assert saved_files[1].read_bytes() == b"second"
     assert set(email_submission.file_checksums.values()) == {"first.pdf", "second.docx"}
 
 
@@ -474,7 +476,7 @@ def test_email_submission_creates_confirmation_from_own_header_and_checksums(tmp
     assert "Missing attachments" not in body
 
 
-def test_bulk_send_confirmations_processes_unconfirmed_emails_in_order(tmp_path):
+def test_bulk_confirmation_delivery_processes_unconfirmed_emails_in_order(tmp_path):
     class FakeMailHelper:
         def __init__(self):
             self.sent = []
@@ -543,7 +545,7 @@ def test_bulk_send_confirmations_processes_unconfirmed_emails_in_order(tmp_path)
     collector.email_histories["14020150014"] = history
 
     collector._process_submissions(["14020150014"])
-    collector.send_confirmations()
+    collector._send_confirmations(["14020150014"])
 
     assert fake_mail_helper.fetched == ["UID1", "UID2"]
     assert [msg["In-Reply-To"] for _, _, msg in fake_mail_helper.sent] == [
@@ -643,7 +645,7 @@ def test_bulk_unconfirmed_submissions_overwrite_from_earliest_to_latest(tmp_path
     assert file_path.read_bytes() == b"new"
 
 
-def test_single_send_confirmations_processes_only_latest_email(tmp_path):
+def test_single_confirmation_delivery_processes_only_latest_email(tmp_path):
     class FakeMailHelper:
         def __init__(self):
             self.sent = []
@@ -713,7 +715,7 @@ def test_single_send_confirmations_processes_only_latest_email(tmp_path):
     collector.email_histories["14020150015"] = history
 
     collector._process_submissions(["14020150015"])
-    collector.send_confirmations()
+    collector._send_confirmations(["14020150015"])
 
     assert fake_mail_helper.fetched == ["UID2"]
     assert len(fake_mail_helper.sent) == 1
@@ -724,7 +726,7 @@ def test_single_send_confirmations_processes_only_latest_email(tmp_path):
     assert "Nora-old.pdf" not in body
 
 
-def test_collect_then_send_confirmations_does_not_download_twice(tmp_path):
+def test_collect_submissions_sends_confirmations_without_downloading_twice(tmp_path):
     class FakeMailHelper:
         def __init__(self):
             self.sent = []
@@ -781,7 +783,6 @@ def test_collect_then_send_confirmations_does_not_download_twice(tmp_path):
     collector.disconnect = lambda: None
 
     collector.collect_submissions()
-    collector.send_confirmations()
 
     assert fake_mail_helper.fetched == ["UID1"]
     assert len(fake_mail_helper.sent) == 1
@@ -845,7 +846,6 @@ def test_boolean_batch_mode_downloads_all_and_skips_confirmations(tmp_path):
 
     condition = collector._build_search_conditions()
     collector.collect_submissions()
-    collector.send_confirmations()
 
     assert "UNSEEN" not in condition
     assert fake_mail_helper.fetched == ["UID1", "UID2"]
