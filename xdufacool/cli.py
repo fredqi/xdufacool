@@ -8,6 +8,7 @@ from pathlib import Path
 from xdufacool.models import Course
 from xdufacool.utils import setup_logging, load_config
 from xdufacool.collectors import LocalSubmissionCollector, EmailSubmissionCollector
+from xdufacool.score_helper import add_score_subparser
 
 
 def load_config(config_file, task_name, base_dir):
@@ -139,6 +140,8 @@ def main():
     check_parser = subparsers.add_parser("check", parents=[parent_parser],
                                          help="Check and download email submissions")
     check_parser.set_defaults(func=check_submissions)
+
+    add_score_subparser(subparsers)
 
     args = parser.parse_args()
     # Set logging level based on --debug flag
