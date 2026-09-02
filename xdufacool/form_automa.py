@@ -4,8 +4,8 @@
 # Author: Fred Qi
 # Created: 2022-08-21 16:02:49(+0800)
 #
-# Last-Updated: 2023-11-06 15:01:34(+0800) [by Fred Qi]
-#     Update #: 2444
+# Last-Updated: 2026-06-03 19:28:45(+0800) [by Fred Qi]
+#     Update #: 2449
 # 
 
 # Commentary:
@@ -19,7 +19,7 @@
 # 
 import re
 import os
-# import sys
+import sys
 # import fitz
 import logging
 import warnings
@@ -67,17 +67,17 @@ from mistletoe.span_token import RawText, LineBreak, Strong, Emphasis
 # if 'linux' == sys.platform:
 #     # WORKDIR = "/home/fred/cloud/share/senior-design"
 #     # WORKDIR = "/home/fred/cloud/OneDrive/students/forms-undergraduates"
-#     WORKDIR = "/home/fred/cloud/OneDrive/students/senior-design/templates"
-#     TEACHDIR = "/home/fred/cloud/OneDrive/students/senior-design"
+#     # WORKDIR = "/home/fred/cloud/onedrive/students/senior-design/templates"
+#     # TEACHDIR = "/home/fred/cloud/onedrive/students/senior-design"
 #     # TEACHDIR = "/home/fred/cloud/share/teaching"
 # elif 'win32' == sys.platform:
 #     from docx2pdf import convert
 #     WORKDIR = "C:\\Users\\fredq\\github\\senior-design"
 #     TEACHDIR = "C:\\Users\\fredq\\github\\teaching"
 
-# DATA_FILE = path.join(TEACHDIR, "毕业设计表单数据-2024.xlsx")
+# DATA_FILE = path.join(TEACHDIR, "毕业设计表单数据-2026.xlsx")
 # TEMPLATE_DIR = path.join(WORKDIR, "")
-# OUTPUT_DIR = WORKDIR
+# OUTPUT_DIR = path.join(WORKDIR, "2026")
 
 
 class MarkdownDocxMerger:
@@ -365,11 +365,11 @@ def sheet_row_dict(sheet, keys, min_row=4, max_row=8):
     for row in sheet.iter_rows(min_row=min_row, max_row=max_row):
         row_dict = {k:v.value for k, v in zip(keys, row)}
         if 'sc' in row_dict and 'score' in row_dict:
-            # print(row_dict['sc'], row_dict['score'])
+            print(row_dict['sc'], row_dict['score'])
             sc, score = row_dict['sc'], row_dict['score']
             sc = 0 if sc is None else sc
             sc_min = score_range[score]
-            # print(sc, score, sc_min)
+            print(sc, score, sc_min)
             if sc < sc_min or sc >= (sc_min + 10):
                 warnings.warn(f"成绩等级与分数不一至 {row_dict['id']} {sc} {score}")
                 
@@ -383,9 +383,11 @@ def sheet_row_dict(sheet, keys, min_row=4, max_row=8):
     return data
 
 
-def document_merge(template, data):
+def document_merge(template, data, output_dir=OUTPUT_DIR):
     """Merge data into a docx template."""
     output_filename = path.basename(template)
+    output_root = Path(output_dir)
+    output_root.mkdir(parents=True, exist_ok=True)
     print(output_filename)
     for row in data:
         document = MailMerge(template)
@@ -395,12 +397,11 @@ def document_merge(template, data):
         document.merge(**row)
         sid, name = row['id'], row['name']
         title = row['title']
-        output_dir = path.join(OUTPUT_DIR, f'{title}')
-        if not path.exists(output_dir):
-            os.mkdir(output_dir)
+        target_dir = output_root / f'{title}'
+        target_dir.mkdir(parents=True, exist_ok=True)
         # print(output_filename, sid, name, row['date'])
         # print(f"    {sid} {name} {row['sc']} {row['score']}")
-        document.write(path.join(output_dir, output_filename))
+        document.write(str(target_dir / output_filename))
            
     
 def template_dict(template_dir, sheets):
@@ -417,18 +418,77 @@ def template_dict(template_dir, sheets):
     return templates
 
     
-def form_auto_merge(sheets=['日常考核']):
+def form_auto_merge(sheets=None,
+                    data_file=DATA_FILE,
+                    template_dir=TEMPLATE_DIR,
+                    output_dir=OUTPUT_DIR):
+    if sheets is None:
+        sheets = ['日常考核']
     # sheet_names = ['日常考核', '软硬件验收', '中期检查', '指导教师评分表', '评阅评分表', '答辩登记表']
-    templates = template_dict(TEMPLATE_DIR, sheets)
+    templates = template_dict(template_dir, sheets)
     print(sheets)
     print("\n".join([f'{k}={v}' for k,v in templates.items()]))
-    fields, wb = load_form_data(DATA_FILE)
+    fields, wb = load_form_data(data_file)
     # print(fields)
     for sheet_name in sheets:
         template = templates[sheet_name]
         keys = sheet_column_keys(wb[sheet_name], fields)
         data = sheet_row_dict(wb[sheet_name], keys)
-        document_merge(template, data)
+        document_merge(template, data, output_dir=output_dir)
+
+
+def run_form_auto_merge(args):
+    """CLI handler for senior-design form auto merge."""
+    data_file = Path(args.data_file)
+    template_dir = Path(args.template_dir)
+    output_dir = Path(args.output_dir)
+
+    if not data_file.exists():
+        raise SystemExit(f"Error: data file not found: {data_file}")
+    if not template_dir.exists() or not template_dir.is_dir():
+        raise SystemExit(f"Error: template directory not found: {template_dir}")
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    form_auto_merge(
+        sheets=args.sheets,
+        data_file=str(data_file),
+        template_dir=str(template_dir),
+        output_dir=str(output_dir),
+    )
+
+
+def add_forms_subparser(subparsers):
+    """Register senior-design forms subcommands under main xdufacool CLI."""
+    forms_parser = subparsers.add_parser("forms", help="Senior-design forms utilities")
+    forms_subparsers = forms_parser.add_subparsers(dest="forms_subcommand", required=True)
+
+    auto_merge_parser = forms_subparsers.add_parser(
+        "auto-merge",
+        help="Auto merge senior-design forms from excel into docx templates",
+    )
+    auto_merge_parser.add_argument(
+        "--sheets",
+        nargs="+",
+        default=["日常考核"],
+        help="Sheet names to process",
+    )
+    auto_merge_parser.add_argument(
+        "--data-file",
+        default=DATA_FILE,
+        help="Excel data file for senior-design forms",
+    )
+    auto_merge_parser.add_argument(
+        "--template-dir",
+        default=TEMPLATE_DIR,
+        help="Directory containing docx templates",
+    )
+    auto_merge_parser.add_argument(
+        "--output-dir",
+        default=OUTPUT_DIR,
+        help="Directory where merged forms will be written",
+    )
+    auto_merge_parser.set_defaults(func=run_form_auto_merge)
+    return forms_parser
 
 
 def merge_replacements(folder):
@@ -926,8 +986,8 @@ if __name__ == "__main__":
     #         course.compose_summary(template_filepath, terms[course.semester])
 
     # sheets = ['日常考核', '软硬件验收', '中期检查', '指导教师评分表', '评阅评分表', '答辩登记表']
-    sheets = ['任务书']
-    form_auto_merge(sheets)
+    # sheets = ['软硬件验收', '指导教师评分表', '评阅评分表', '答辩登记表']
+    # form_auto_merge(sheets=sheets)
     # # convert_merge_replace()
     # # merge_replacements("16020520025-马丁扬")
     # # replace_pages("16020520025", "马丁扬", 17, 26)
@@ -944,6 +1004,7 @@ if __name__ == "__main__":
     #             print(n_pages, pdf)
     #             attentions.append(f"{n_pages} pages in {pdf}")
     # print("\n".join(attentions))
+    pass
     
 # 
 # form_automa.py ends here

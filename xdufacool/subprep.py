@@ -167,15 +167,20 @@ def rewrite_inputs(content: str, current_file: Path, processing_queue: list) -> 
 
 def rewrite_figures(content: str, current_file: Path, intermediate_dir: Path, global_label_map: Dict[str, str]) -> str:
     """Rewrites figure environments: updates options, renames images, copies images."""
-    figure_pattern = re.compile(r'(\\begin\{figure\*?\}.*?\\end\{figure\*?\})', re.DOTALL)
+    env_pattern = re.compile(
+        r'\\begin\{(?P<env>figure\*?|IEEEbiography)\}(?P<body>.*?)\\end\{(?P=env)\}',
+        re.DOTALL,
+    )
     
     def figure_block_repl(match):
-        full_block = match.group(1)
+        full_block = match.group(0)
+        env_name = match.group('env')
         
-        label_match = re.search(r'\\label\{(.*?)\}', full_block)
         fig_num = None
-        if label_match:
-            fig_num = global_label_map.get(label_match.group(1))
+        if env_name.startswith('figure'):
+            label_match = re.search(r'\\label\{(.*?)\}', full_block)
+            if label_match:
+                fig_num = global_label_map.get(label_match.group(1))
         
         img_pattern = re.compile(r'\\includegraphics(?:\[(.*?)\])?\{(.*?)\}')
         
@@ -207,7 +212,7 @@ def rewrite_figures(content: str, current_file: Path, intermediate_dir: Path, gl
 
         return img_pattern.sub(img_replacer, full_block)
 
-    return figure_pattern.sub(figure_block_repl, content)
+    return env_pattern.sub(figure_block_repl, content)
 
 def cleanup_tex_content(content: str) -> str:
     """

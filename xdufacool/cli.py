@@ -9,6 +9,7 @@ from xdufacool.models import Course
 from xdufacool.utils import setup_logging, load_config
 from xdufacool.collectors import LocalSubmissionCollector, EmailSubmissionCollector
 from xdufacool.score_helper import add_score_subparser
+from xdufacool.form_automa import add_forms_subparser
 
 
 def load_config(config_file, task_name, base_dir):
@@ -142,6 +143,7 @@ def main():
     check_parser.set_defaults(func=check_submissions)
 
     add_score_subparser(subparsers)
+    add_forms_subparser(subparsers)
 
     args = parser.parse_args()
     # Set logging level based on --debug flag

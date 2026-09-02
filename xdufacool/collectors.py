@@ -464,6 +464,10 @@ class EmailSubmissionCollector(SubmissionCollector):
         assignment_id = self.primary_assignment.assignment_id
         if self.collection_mode == 'bulk':
             prefix = EmailSubmissionCollector._extract_search_prefix(assignment_id)
+            abbrev = self.course.abbreviation
+            if prefix.find(self.course.abbreviation) >= 0:
+                parts = [self.course.abbreviation, prefix]
+                return "-".join(parts)
             return f"{self.course.abbreviation}-{prefix}"
         return self.primary_assignment.common_name()
 
